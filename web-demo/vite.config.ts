@@ -31,7 +31,10 @@ export default defineConfig({
           'tensorflow': ['@tensorflow/tfjs', '@tensorflow/tfjs-backend-webgl']
         }
       }
-    }
+    },
+    // Vercel optimization
+    sourcemap: false,
+    minify: 'terser'
   },
   optimizeDeps: {
     exclude: ['@mediapipe/tasks-vision']

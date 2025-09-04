@@ -1,0 +1,26 @@
+{
+  "buildCommand": "cd web-demo && npm run build",
+  "outputDirectory": "web-demo/dist",
+  "installCommand": "cd web-demo && npm install",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "require-corp"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy", 
+          "value": "same-origin"
+        }
+      ]
+    }
+  ]
+}
