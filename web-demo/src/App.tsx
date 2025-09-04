@@ -7,7 +7,7 @@ import './App.css';
 
 function App() {
   const [isSupported, setIsSupported] = useState(false);
-  const events = [] as MultiModalEvent[];
+  const [, setEvents] = useState([] as MultiModalEvent[]);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [mediaStatus, setMediaStatus] = useState({
