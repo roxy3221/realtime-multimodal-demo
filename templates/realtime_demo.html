@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时多模态分析Demo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto 1fr auto;
+            gap: 20px;
+            min-height: 100vh;
+        }
+        
+        .header {
+            grid-column: 1 / -1;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .main-content {
+            display: contents;
+        }
+        
+        .video-section, .analysis-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .controls {
+            grid-column: 1 / -1;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .subtitle {
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        #videoPreview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .face-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .face-box {
+            position: absolute;
+            border: 2px solid #00ff00;
+            background: rgba(0, 255, 0, 0.1);
+        }
+        
+        .status-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-connected { background-color: #27ae60; }
+        .status-disconnected { background-color: #e74c3c; }
+        .status-processing { background-color: #f39c12; }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            flex: 1;
+        }
+        
+        .metric-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .metric-title {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .metric-subtitle {
+            font-size: 0.8em;
+            color: #7f8c8d;
+        }
+        
+        .chart-container {
+            height: 200px;
+            margin: 15px 0;
+        }
+        
+        .asr-output {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            min-height: 120px;
+            font-family: 'Courier New', monospace;
+            font-size: 1.1em;
+            line-height: 1.6;
+        }
+        
+        .asr-current {
+            color: #f39c12;
+            font-weight: bold;
+        }
+        
+        .asr-final {
+            color: #27ae60;
+        }
+        
+        .control-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .settings-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #667eea;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                padding: 10px;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>实时多模态分析系统</h1>
+            <p class="subtitle">语音识别 + 韵律分析 + 面部表情检测</p>
+        </div>
+        
+        <div class="video-section">
+            <h3>视频采集与面部分析</h3>
+            <div class="video-container">
+                <video id="videoPreview" autoplay muted></video>
+                <canvas id="faceOverlay" class="face-overlay"></canvas>
+                <div id="statusIndicator" class="status-indicator status-disconnected">未连接</div>
+            </div>
+            
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">头部姿态</div>
+                    <div class="metric-value" id="headPose">0°, 0°</div>
+                    <div class="metric-subtitle">偏航角, 俯仰角</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">表情识别</div>
+                    <div class="metric-value" id="expression">中性</div>
+                    <div class="metric-subtitle">置信度: <span id="expressionConf">0%</span></div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">眼部状态</div>
+                    <div class="metric-value" id="eyeState">正常</div>
+                    <div class="metric-subtitle">EAR: <span id="earValue">0.30</span></div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">面部稳定性</div>
+                    <div class="metric-value" id="stability">稳定</div>
+                    <div class="metric-subtitle">得分: <span id="stabilityScore">100%</span></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="analysis-section">
+            <h3>语音识别与韵律分析</h3>
+            
+            <div class="asr-output" id="asrOutput">
+                <div class="asr-current" id="currentText">等待语音输入...</div>
+                <div class="asr-final" id="finalText"></div>
+            </div>
+            
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">基频 (Hz)</div>
+                    <div class="metric-value" id="pitchValue">0</div>
+                    <div class="metric-subtitle">变化: <span id="pitchStd">±0</span></div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">语音能量</div>
+                    <div class="metric-value" id="energyValue">0.00</div>
+                    <div class="metric-subtitle">活动: <span id="activityLevel">静默</span></div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">语速 (WPM)</div>
+                    <div class="metric-value" id="speechRate">0</div>
+                    <div class="metric-subtitle">过零率: <span id="zcrValue">0.0</span></div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">音质特征</div>
+                    <div class="metric-value" id="voiceQuality">正常</div>
+                    <div class="metric-subtitle">频谱重心: <span id="centroid">0</span> Hz</div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <canvas id="prosodyChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <button id="startBtn" class="btn btn-primary">开始分析</button>
+                <button id="stopBtn" class="btn btn-danger" disabled>停止分析</button>
+                <button id="resetBtn" class="btn">重置</button>
+            </div>
+            
+            <div class="settings-panel">
+                <div class="settings-row">
+                    <label>启用面部检测</label>
+                    <label class="switch">
+                        <input type="checkbox" id="enableFace" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="settings-row">
+                    <label>启用韵律分析</label>
+                    <label class="switch">
+                        <input type="checkbox" id="enableProsody" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="settings-row">
+                    <label>显示实时图表</label>
+                    <label class="switch">
+                        <input type="checkbox" id="enableChart" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let socket;
+        let mediaStream = null;
+        let mediaRecorder = null;
+        let isRecording = false;
+        let prosodyChart = null;
+        let frameCapture = null;
+        
+        // DOM元素
+        const videoPreview = document.getElementById('videoPreview');
+        const faceOverlay = document.getElementById('faceOverlay');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeSocket();
+            initializeChart();
+            setupEventListeners();
+            requestMediaPermissions();
+        });
+        
+        // Socket.IO 连接
+        function initializeSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('WebSocket连接成功');
+                updateStatus('connected', '已连接');
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('WebSocket连接断开');
+                updateStatus('disconnected', '连接断开');
+            });
+            
+            socket.on('session_started', (data) => {
+                console.log('分析会话已启动:', data.message);
+                updateStatus('processing', '分析中');
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            });
+            
+            socket.on('session_stopped', (data) => {
+                console.log('分析会话已停止:', data.message);
+                updateStatus('connected', '已连接');
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            });
+            
+            socket.on('analysis_result', (result) => {
+                handleAnalysisResult(result);
+            });
+            
+            socket.on('error', (error) => {
+                console.error('服务器错误:', error);
+                alert('错误: ' + error.message);
+            });
+        }
+        
+        // 初始化图表
+        function initializeChart() {
+            const ctx = document.getElementById('prosodyChart').getContext('2d');
+            prosodyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '基频 (Hz)',
+                            data: [],
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '能量',
+                            data: [],
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 0
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '时间'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '基频 (Hz)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '能量'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 事件监听器
+        function setupEventListeners() {
+            startBtn.addEventListener('click', startAnalysis);
+            stopBtn.addEventListener('click', stopAnalysis);
+            resetBtn.addEventListener('click', resetAll);
+            
+            // 窗口大小变化时调整canvas
+            window.addEventListener('resize', resizeCanvas);
+        }
+        
+        // 请求媒体权限（改进版本）
+        async function requestMediaPermissions() {
+            try {
+                // 先检查HTTPS
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    showPermissionError('需要HTTPS协议才能访问摄像头和麦克风\n请使用 https:// 访问此页面');
+                    return;
+                }
+                
+                // 检查浏览器支持
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    showPermissionError('您的浏览器不支持媒体设备访问\n请使用现代浏览器（Chrome、Firefox、Edge等）');
+                    return;
+                }
+                
+                // 显示权限申请提示
+                showPermissionDialog();
+                
+                // 请求权限
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+                
+                videoPreview.srcObject = mediaStream;
+                resizeCanvas();
+                hidePermissionDialog();
+                
+                console.log('媒体权限获取成功');
+                
+            } catch (error) {
+                console.error('媒体权限获取失败:', error);
+                handlePermissionError(error);
+            }
+        }
+        
+        // 处理权限错误
+        function handlePermissionError(error) {
+            let message = '';
+            let instructions = '';
+            
+            switch (error.name) {
+                case 'NotAllowedError':
+                    message = '摄像头和麦克风访问被拒绝';
+                    instructions = `请按以下步骤授权：
+                    
+Chrome浏览器：
+1. 点击地址栏左侧的 🔒 或 📹 图标
+2. 选择"允许"摄像头和麦克风
+3. 刷新页面重试
+
+或者：
+1. 进入 chrome://settings/content/camera
+2. 将此网站添加到允许列表
+3. 对麦克风执行相同操作`;
+                    break;
+                    
+                case 'NotFoundError':
+                    message = '未找到摄像头或麦克风设备';
+                    instructions = '请检查设备连接并重试';
+                    break;
+                    
+                case 'NotReadableError':
+                    message = '摄像头或麦克风被其他应用占用';
+                    instructions = '请关闭其他使用摄像头的应用程序';
+                    break;
+                    
+                default:
+                    message = '媒体访问失败: ' + error.message;
+                    instructions = '请检查浏览器设置和设备连接';
+            }
+            
+            showPermissionError(message + '\n\n' + instructions);
+        }
+        
+        // 显示权限申请对话框
+        function showPermissionDialog() {
+            const dialog = document.createElement('div');
+            dialog.id = 'permissionDialog';
+            dialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Segoe UI', sans-serif;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    max-width: 400px;
+                    text-align: center;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+                ">
+                    <div style="font-size: 60px; margin-bottom: 20px;">📹🎤</div>
+                    <h3 style="margin-bottom: 15px; color: #2c3e50;">需要访问权限</h3>
+                    <p style="color: #7f8c8d; margin-bottom: 20px; line-height: 1.6;">
+                        此应用需要访问您的摄像头和麦克风<br>
+                        进行实时多模态分析
+                    </p>
+                    <div class="loading-spinner" style="
+                        width: 30px;
+                        height: 30px;
+                        border: 3px solid #f3f3f3;
+                        border-top: 3px solid #667eea;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                        margin: 0 auto;
+                    "></div>
+                    <p style="color: #95a5a6; font-size: 14px; margin-top: 15px;">
+                        请在浏览器弹窗中点击"允许"
+                    </p>
+                </div>
+            `;
+            
+            document.body.appendChild(dialog);
+            
+            // 添加旋转动画
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        // 隐藏权限对话框
+        function hidePermissionDialog() {
+            const dialog = document.getElementById('permissionDialog');
+            if (dialog) {
+                dialog.remove();
+            }
+        }
+        
+        // 显示权限错误
+        function showPermissionError(message) {
+            hidePermissionDialog();
+            
+            const dialog = document.createElement('div');
+            dialog.id = 'errorDialog';
+            dialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Segoe UI', sans-serif;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    max-width: 500px;
+                    text-align: center;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+                ">
+                    <div style="font-size: 60px; margin-bottom: 20px;">⚠️</div>
+                    <h3 style="margin-bottom: 15px; color: #e74c3c;">权限设置</h3>
+                    <pre style="
+                        color: #2c3e50;
+                        margin-bottom: 20px;
+                        line-height: 1.6;
+                        text-align: left;
+                        background: #f8f9fa;
+                        padding: 15px;
+                        border-radius: 5px;
+                        font-size: 13px;
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                    ">${message}</pre>
+                    <button onclick="this.parentElement.parentElement.remove(); requestMediaPermissions();" 
+                            style="
+                        background: #667eea;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        margin-right: 10px;
+                    ">重试</button>
+                    <button onclick="this.parentElement.parentElement.remove();" 
+                            style="
+                        background: #95a5a6;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                    ">关闭</button>
+                </div>
+            `;
+            
+            document.body.appendChild(dialog);
+        }
+        
+        // 开始分析
+        async function startAnalysis() {
+            if (!mediaStream) {
+                alert('请先授权访问摄像头和麦克风');
+                return;
+            }
+            
+            try {
+                // 启动录音
+                mediaRecorder = new MediaRecorder(mediaStream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        sendAudioData(event.data);
+                    }
+                };
+                
+                mediaRecorder.start(500); // 每500ms发送一次音频数据
+                isRecording = true;
+                
+                // 启动视频帧捕获
+                startFrameCapture();
+                
+                // 通知服务器启动会话
+                socket.emit('start_session');
+                
+            } catch (error) {
+                console.error('启动分析失败:', error);
+                alert('启动分析失败: ' + error.message);
+            }
+        }
+        
+        // 停止分析
+        function stopAnalysis() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+            }
+            
+            if (frameCapture) {
+                clearInterval(frameCapture);
+                frameCapture = null;
+            }
+            
+            // 通知服务器停止会话
+            socket.emit('stop_session');
+        }
+        
+        // 重置所有数据
+        function resetAll() {
+            // 清除ASR输出
+            document.getElementById('currentText').textContent = '等待语音输入...';
+            document.getElementById('finalText').textContent = '';
+            
+            // 重置所有指标
+            resetMetrics();
+            
+            // 清除图表数据
+            if (prosodyChart) {
+                prosodyChart.data.labels = [];
+                prosodyChart.data.datasets.forEach(dataset => {
+                    dataset.data = [];
+                });
+                prosodyChart.update();
+            }
+            
+            // 清除面部检测框
+            clearFaceOverlay();
+        }
+        
+        // 发送音频数据
+        function sendAudioData(audioBlob) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const arrayBuffer = reader.result;
+                const uint8Array = new Uint8Array(arrayBuffer);
+                
+                socket.emit('audio_data', {
+                    audio: Array.from(uint8Array),
+                    timestamp: Date.now()
+                });
+            };
+            reader.readAsArrayBuffer(audioBlob);
+        }
+        
+        // 开始帧捕获
+        function startFrameCapture() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            frameCapture = setInterval(() => {
+                if (!document.getElementById('enableFace').checked) return;
+                
+                canvas.width = videoPreview.videoWidth;
+                canvas.height = videoPreview.videoHeight;
+                
+                if (canvas.width > 0 && canvas.height > 0) {
+                    ctx.drawImage(videoPreview, 0, 0);
+                    const frameData = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    socket.emit('video_frame', {
+                        frame: frameData,
+                        timestamp: Date.now()
+                    });
+                }
+            }, 200); // 每200ms发送一帧
+        }
+        
+        // 处理分析结果
+        function handleAnalysisResult(result) {
+            switch (result.type) {
+                case 'asr':
+                    updateASRDisplay(result.data);
+                    break;
+                case 'prosody':
+                    updateProsodyDisplay(result.data);
+                    break;
+                case 'face':
+                    updateFaceDisplay(result.data);
+                    break;
+            }
+        }
+        
+        // 更新ASR显示
+        function updateASRDisplay(data) {
+            const currentText = document.getElementById('currentText');
+            const finalText = document.getElementById('finalText');
+            
+            if (data.is_final) {
+                // 最终识别结果
+                finalText.textContent += data.text + ' ';
+                currentText.textContent = '等待语音输入...';
+            } else {
+                // 临时识别结果
+                currentText.textContent = data.text;
+            }
+        }
+        
+        // 更新韵律显示
+        function updateProsodyDisplay(data) {
+            if (!document.getElementById('enableProsody').checked) return;
+            
+            // 更新指标显示
+            document.getElementById('pitchValue').textContent = Math.round(data.pitch.mean);
+            document.getElementById('pitchStd').textContent = '±' + Math.round(data.pitch.std);
+            document.getElementById('energyValue').textContent = data.energy.mean.toFixed(3);
+            document.getElementById('activityLevel').textContent = data.activity_level;
+            document.getElementById('speechRate').textContent = Math.round(data.speech_rate.estimated_rate);
+            document.getElementById('zcrValue').textContent = data.speech_rate.zcr.toFixed(3);
+            document.getElementById('voiceQuality').textContent = data.voice_quality.brightness;
+            document.getElementById('centroid').textContent = Math.round(data.voice_quality.spectral_centroid);
+            
+            // 更新图表
+            if (document.getElementById('enableChart').checked) {
+                updateChart(data);
+            }
+        }
+        
+        // 更新面部显示
+        function updateFaceDisplay(data) {
+            if (!document.getElementById('enableFace').checked) return;
+            
+            if (data.face_detected) {
+                // 更新面部指标
+                const yaw = Math.round(data.head_pose.yaw);
+                const pitch = Math.round(data.head_pose.pitch);
+                document.getElementById('headPose').textContent = `${yaw}°, ${pitch}°`;
+                
+                document.getElementById('expression').textContent = data.expression.dominant_expression;
+                document.getElementById('expressionConf').textContent = Math.round(data.expression.expression_confidence * 100) + '%';
+                
+                document.getElementById('eyeState').textContent = data.eyes.blink ? '眨眼' : '正常';
+                document.getElementById('earValue').textContent = data.eyes.ear.toFixed(2);
+                
+                document.getElementById('stability').textContent = data.stability.status;
+                document.getElementById('stabilityScore').textContent = Math.round(data.stability.score * 100) + '%';
+                
+                // 绘制面部检测框
+                drawFaceBox(data.face_position);
+            } else {
+                // 无面部检测
+                resetFaceMetrics();
+                clearFaceOverlay();
+            }
+        }
+        
+        // 更新图表
+        function updateChart(data) {
+            const now = new Date();
+            const timeLabel = now.toLocaleTimeString();
+            
+            // 限制数据点数量
+            const maxDataPoints = 20;
+            
+            if (prosodyChart.data.labels.length >= maxDataPoints) {
+                prosodyChart.data.labels.shift();
+                prosodyChart.data.datasets[0].data.shift();
+                prosodyChart.data.datasets[1].data.shift();
+            }
+            
+            prosodyChart.data.labels.push(timeLabel);
+            prosodyChart.data.datasets[0].data.push(data.pitch.mean);
+            prosodyChart.data.datasets[1].data.push(data.energy.mean * 1000); // 放大显示
+            
+            prosodyChart.update('none');
+        }
+        
+        // 绘制面部检测框
+        function drawFaceBox(facePos) {
+            const canvas = faceOverlay;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (facePos.size > 0) {
+                const centerX = facePos.center_x * canvas.width;
+                const centerY = facePos.center_y * canvas.height;
+                const boxSize = Math.sqrt(facePos.size) * Math.min(canvas.width, canvas.height);
+                
+                const x = centerX - boxSize / 2;
+                const y = centerY - boxSize / 2;
+                
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, boxSize, boxSize);
+                
+                // 绘制中心点
+                ctx.fillStyle = '#00ff00';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 3, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+        
+        // 清除面部覆盖层
+        function clearFaceOverlay() {
+            const canvas = faceOverlay;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // 调整canvas大小
+        function resizeCanvas() {
+            const canvas = faceOverlay;
+            const video = videoPreview;
+            
+            if (video.videoWidth && video.videoHeight) {
+                canvas.width = video.offsetWidth;
+                canvas.height = video.offsetHeight;
+            }
+        }
+        
+        // 更新状态指示器
+        function updateStatus(status, text) {
+            statusIndicator.className = `status-indicator status-${status}`;
+            statusIndicator.textContent = text;
+        }
+        
+        // 重置指标
+        function resetMetrics() {
+            // 韵律指标
+            document.getElementById('pitchValue').textContent = '0';
+            document.getElementById('pitchStd').textContent = '±0';
+            document.getElementById('energyValue').textContent = '0.00';
+            document.getElementById('activityLevel').textContent = '静默';
+            document.getElementById('speechRate').textContent = '0';
+            document.getElementById('zcrValue').textContent = '0.0';
+            document.getElementById('voiceQuality').textContent = '正常';
+            document.getElementById('centroid').textContent = '0';
+            
+            resetFaceMetrics();
+        }
+        
+        // 重置面部指标
+        function resetFaceMetrics() {
+            document.getElementById('headPose').textContent = '0°, 0°';
+            document.getElementById('expression').textContent = '中性';
+            document.getElementById('expressionConf').textContent = '0%';
+            document.getElementById('eyeState').textContent = '正常';
+            document.getElementById('earValue').textContent = '0.30';
+            document.getElementById('stability').textContent = '稳定';
+            document.getElementById('stabilityScore').textContent = '100%';
+        }
+        
+        // 页面卸载时清理资源
+        window.addEventListener('beforeunload', () => {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+            if (socket) {
+                socket.disconnect();
+            }
+        });
+    </script>
+</body>
+</html>
