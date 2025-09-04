@@ -4,6 +4,10 @@
   "installCommand": "cd web-demo && npm install",
   "rewrites": [
     {
+      "source": "/workers/(.*)",
+      "destination": "/workers/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
