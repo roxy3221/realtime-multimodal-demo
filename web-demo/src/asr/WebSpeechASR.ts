@@ -69,12 +69,13 @@ export class WebSpeechASR {
     let finalTranscript = '';
     let interimTranscript = '';
 
-    // 处理结果
+    // 处理结果，增加安全检查
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       const transcript = result?.transcript;
       
-      if (transcript && typeof transcript === 'string') {
+      // ✅ 增强空值检查
+      if (transcript && typeof transcript === 'string' && transcript.trim().length > 0) {
         if (result.isFinal) {
           finalTranscript += transcript + ' ';
           this.processNewWords(transcript);
@@ -84,8 +85,12 @@ export class WebSpeechASR {
       }
     }
 
-    // 计算增量文本
-    const newTranscript = finalTranscript || interimTranscript;
+    // 计算增量文本，增加安全检查
+    const newTranscript = (finalTranscript || interimTranscript).trim();
+    if (!newTranscript || newTranscript.length <= this.lastTranscriptLength) {
+      return; // ✅ 跳过空白或重复内容
+    }
+    
     const textDelta = newTranscript.slice(this.lastTranscriptLength);
     
     if (textDelta.trim().length > 0) {
@@ -108,22 +113,28 @@ export class WebSpeechASR {
    * 处理新单词（用于WPM计算）
    */
   private processNewWords(transcript: string): void {
-    if (!transcript || typeof transcript !== 'string') {
+    // ✅ 多重安全检查
+    if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
       console.warn('⚠️ Invalid transcript provided to processNewWords:', transcript);
       return;
     }
     
-    const words = transcript.split(/\s+/).filter(word => word.length > 0);
-    const now = Date.now();
-    
-    words.forEach(word => {
-      this.wordHistory.push({ word, time: now });
-    });
-    
-    // 清理旧数据
-    this.wordHistory = this.wordHistory.filter(
-      entry => now - entry.time < this.WPM_WINDOW_MS
-    );
+    try {
+      const words = transcript.trim().split(/\s+/).filter(word => word && word.length > 0);
+      const now = Date.now();
+      
+      words.forEach(word => {
+        this.wordHistory.push({ word: word.trim(), time: now });
+      });
+      
+      // 清理旧数据
+      this.wordHistory = this.wordHistory.filter(
+        entry => now - entry.time < this.WPM_WINDOW_MS
+      );
+    } catch (error) {
+      // ✅ 捕获所有可能的错误
+      console.error('❌ Error processing words:', error, 'transcript:', transcript);
+    }
   }
 
   /**

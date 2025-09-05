@@ -255,17 +255,18 @@ export class WebRTCMediaCapture {
       
       this.frameProcessingRate = config.video.frameRate || 15;
       
-      // 初始化 Worker
+      // 初始化 Worker，传递 OffscreenCanvas
       this.videoWorker.postMessage({
         type: 'init',
         data: {
+          canvas: this.videoCanvas, // 传递 OffscreenCanvas
           config: {
             width: config.video.width,
             height: config.video.height,
             processingRate: this.frameProcessingRate
           }
         }
-      });
+      }, [this.videoCanvas]); // ✅ 必须作为 transferable 对象传递
 
       // 监听 Worker 消息
       this.videoWorker.onmessage = (event) => {
