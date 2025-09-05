@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { checkBrowserSupport } from './utils';
 import { globalEventBus } from './events/EventBus';
-import { MediaCapture } from './media/MediaCapture';
+import { WebRTCMediaCapture } from './media/WebRTCMediaCapture';
 import type { MultiModalEvent } from './types';
 import './App.css';
 
@@ -13,7 +13,8 @@ function App() {
   const [mediaStatus, setMediaStatus] = useState({
     hasVideo: false,
     hasAudio: false,
-    audioContextState: 'suspended' as AudioContextState
+    audioContextState: 'suspended' as AudioContextState,
+    webrtcConnectionState: 'new' as RTCPeerConnectionState
   });
   
   // 新增状态
@@ -41,7 +42,7 @@ function App() {
   const [transcriptText, setTranscriptText] = useState('');
   const [currentWPM, setCurrentWPM] = useState(0);
   
-  const mediaCaptureRef = useRef<MediaCapture | null>(null);
+  const mediaCaptureRef = useRef<WebRTCMediaCapture | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -56,8 +57,8 @@ function App() {
     }
 
     if (criticalSupported) {
-      // 初始化MediaCapture
-      mediaCaptureRef.current = new MediaCapture(globalEventBus);
+      // 初始化WebRTCMediaCapture
+      mediaCaptureRef.current = new WebRTCMediaCapture(globalEventBus);
       
       // 订阅所有事件用于调试和UI更新
       const unsubscribe = globalEventBus.subscribe('all', (event) => {
@@ -86,22 +87,25 @@ function App() {
         }
         
         if (event.type === 'prosody') {
+          // WebRTC优化的prosody事件处理
+          const enhancedEvent = event as any; // 包含WebRTC增强字段
+          
           setSpeechMetrics({
             frequency: {
-              value: event.f0,
-              change: Math.floor(Math.random() * 20 - 10) // 模拟变化
+              value: Math.round(enhancedEvent.f0 || 0), // 格式化为整数Hz
+              change: enhancedEvent.f0Stability ? Math.round((1 - enhancedEvent.f0Stability) * 100) : 0
             },
             energy: {
-              value: event.rms,
-              activity: event.rms > 0.1 ? '说话中' : '静默'
+              value: Number((enhancedEvent.rms || 0).toFixed(3)), // 3位小数
+              activity: enhancedEvent.vadActive ? '说话中' : '静默'
             },
             wpm: {
-              value: event.wpm,
-              zeroCrossing: Math.random() * 2
+              value: enhancedEvent.wpm || 0,
+              zeroCrossing: Number((enhancedEvent.zeroCrossingRate || 0).toFixed(2))
             },
             quality: {
-              state: event.rms > 0.2 ? '异常' : '正常',
-              spectralCentroid: Math.floor(Math.random() * 2000)
+              state: (enhancedEvent.f0Confidence > 0.5) ? '正常' : '不稳定',
+              spectralCentroid: Math.round(enhancedEvent.spectralCentroid || 0)
             }
           });
         }
@@ -139,15 +143,19 @@ function App() {
     if (!mediaCaptureRef.current) return;
     
     try {
-      console.log('🚀 Starting multimodal demo...');
+      console.log('🚀 Starting WebRTC multimodal demo...');
       
-      // 初始化媒体采集
+      // WebRTC初始化（包含设备检查和优化）
       await mediaCaptureRef.current.initialize();
       
       // 设置视频预览
       const previewElement = mediaCaptureRef.current.getPreviewElement();
       if (previewElement && videoPreviewRef.current) {
         videoPreviewRef.current.srcObject = previewElement.srcObject;
+        // 添加WebRTC视频就绪事件
+        videoPreviewRef.current.onloadeddata = () => {
+          console.log('✅ WebRTC video preview ready');
+        };
       }
       
       // 开始采集
@@ -159,7 +167,8 @@ function App() {
       setMediaStatus({
         hasVideo: status.hasVideo,
         hasAudio: status.hasAudio,
-        audioContextState: status.audioContextState || 'suspended'
+        audioContextState: status.audioContextState || 'suspended',
+        webrtcConnectionState: status.webrtcConnectionState || 'new'
       });
       
       console.log('✅ Demo started successfully');
@@ -178,7 +187,8 @@ function App() {
     setMediaStatus({
       hasVideo: status.hasVideo,
       hasAudio: status.hasAudio,
-      audioContextState: status.audioContextState || 'suspended'
+      audioContextState: status.audioContextState || 'suspended',
+      webrtcConnectionState: status.webrtcConnectionState || 'new'
     });
     
     console.log('⏹️ Demo stopped');
