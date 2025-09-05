@@ -45,6 +45,7 @@ export interface ASREvent extends BaseEvent {
   }>;
   isFinal: boolean; // 是否为最终结果
   currentWPM?: number; // 当前语速
+  fullTranscript?: string; // 完整的转录文本（可选）
 }
 
 // 联合事件类型

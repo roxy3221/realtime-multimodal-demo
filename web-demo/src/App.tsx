@@ -149,32 +149,54 @@ function App() {
       // WebRTC初始化（包含设备检查和优化）
       await mediaCaptureRef.current.initialize();
       
-      // 设置视频预览
+      // 设置视频预览 - 改进的稳定方式
       const stream = mediaCaptureRef.current.getStream();
+      
       if (stream && videoPreviewRef.current) {
         console.log('🎥 Setting up video preview with stream:', stream);
         
-        videoPreviewRef.current.srcObject = stream;
-        videoPreviewRef.current.autoplay = true;
-        videoPreviewRef.current.muted = true;
-        videoPreviewRef.current.playsInline = true;
+        const video = videoPreviewRef.current;
         
-        // 强制播放视频
-        videoPreviewRef.current.onloadeddata = () => {
-          console.log('✅ Video preview ready');
-          if (videoPreviewRef.current) {
-            videoPreviewRef.current.play().catch(e => {
-              console.warn('Video play failed, this is normal for autoplay restrictions:', e);
-            });
+        // 将video元素注册到MediaCapture
+        mediaCaptureRef.current.setExternalVideoElement(video);
+        
+        // 先设置属性，再设置stream
+        video.muted = true;
+        video.setAttribute('playsinline', 'true');
+        video.autoplay = true;
+        video.srcObject = stream;
+        
+        // 等待视频metadata加载完成
+        await new Promise<void>((resolve) => {
+          if (video.readyState >= 2) {
+            resolve();
+          } else {
+            video.onloadedmetadata = () => {
+              console.log('✅ Video metadata loaded:', {
+                width: video.videoWidth,
+                height: video.videoHeight,
+                readyState: video.readyState
+              });
+              resolve();
+            };
           }
-        };
+        });
+        
+        // 在用户手势上下文中播放视频
+        try {
+          await video.play();
+          console.log('✅ Video playback started successfully');
+        } catch (playError) {
+          console.warn('⚠️ Video autoplay failed (expected for browser security):', playError);
+          // 这是正常的，用户点击后会自动播放
+        }
         
         // 添加错误处理
-        videoPreviewRef.current.onerror = (e) => {
+        video.onerror = (e) => {
           console.error('❌ Video preview error:', e);
         };
       } else {
-        console.warn('⚠️ No media stream or video ref available');
+        console.warn('⚠️ No stream or video ref available');
       }
       
       // 开始采集
@@ -285,9 +307,22 @@ function App() {
                 muted
                 playsInline
                 className="preview-video"
+                onClick={async (e) => {
+                  // 确保视频在用户点击时播放（解决autoplay限制）
+                  const video = e.currentTarget;
+                  if (video.paused) {
+                    try {
+                      await video.play();
+                      console.log('✅ Video started playing after user click');
+                    } catch (err) {
+                      console.warn('Failed to play video after click:', err);
+                    }
+                  }
+                }}
               />
               <div className="video-overlay">
                 {!isCapturing && <div>点击开始预览</div>}
+                {isCapturing && !mediaStatus.hasVideo && <div>点击视频区域开始播放</div>}
               </div>
               <div className={`connection-status ${mediaStatus.hasVideo ? 'connected' : ''}`}>
                 {mediaStatus.hasVideo ? '已连接' : '未连接'}

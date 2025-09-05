@@ -149,45 +149,246 @@ export class MediaCapture {
   }
 
   /**
+   * 创建传统Worker，使用Blob URL方式解决importScripts问题
+   */
+  private createTraditionalWorker(): Worker {
+    const workerCode = `
+      // 传统Worker代码，支持importScripts
+      importScripts('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest');
+      
+      let faceLandmarker = null;
+      let isInitialized = false;
+      let canvas = null;
+      let ctx = null;
+      
+      // 初始化MediaPipe Face Landmarker
+      const initializeFaceLandmarker = async () => {
+        try {
+          const { FilesetResolver, FaceLandmarker } = self;
+          
+          const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          );
+          
+          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numFaces: 1,
+            outputFaceBlendshapes: true,
+            outputFacialTransformationMatrixes: true
+          });
+          
+          isInitialized = true;
+          self.postMessage({ type: 'ready' });
+        } catch (error) {
+          console.error('FaceLandmarker initialization failed:', error);
+          self.postMessage({ 
+            type: 'error', 
+            error: error.message || 'Failed to initialize face detection' 
+          });
+        }
+      };
+      
+      // 处理视频帧
+      const processFrame = (imageData, timestamp, videoWidth, videoHeight) => {
+        if (!isInitialized || !faceLandmarker) {
+          return;
+        }
+        
+        try {
+          // 如果canvas尺寸发生变化，需要重新创建
+          if (!canvas || canvas.width !== videoWidth || canvas.height !== videoHeight) {
+            canvas = new OffscreenCanvas(videoWidth, videoHeight);
+            ctx = canvas.getContext('2d');
+          }
+          
+          // 将ImageData绘制到canvas
+          ctx.putImageData(imageData, 0, 0);
+          
+          // MediaPipe处理
+          const results = faceLandmarker.detectForVideo(canvas, timestamp);
+          
+          if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+            // 提取第一个人脸的数据
+            const landmarks = results.faceLandmarks[0];
+            const blendshapes = results.faceBlendshapes && results.faceBlendshapes.length > 0
+              ? results.faceBlendshapes[0]
+              : null;
+            
+            // 计算基本表情分数
+            const expr = {};
+            if (blendshapes && blendshapes.categories) {
+              blendshapes.categories.forEach(category => {
+                expr[category.categoryName] = category.score;
+              });
+            }
+            
+            // 简单的姿态估计 (基于关键点)
+            const pose = calculateSimplePose(landmarks);
+            
+            // 计算变化分数 (简化版本)
+            const deltaScore = calculateDeltaScore(expr, pose, timestamp);
+            
+            // 如果变化显著，发送事件
+            if (deltaScore > 0.3) {
+              self.postMessage({
+                type: 'face-event',
+                data: {
+                  deltaScore,
+                  expr,
+                  pose,
+                  timestamp,
+                  landmarks: landmarks.slice(0, 10) // 只发送前10个关键点减少数据量
+                }
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Frame processing error:', error);
+        }
+      };
+      
+      // 简单的姿态计算
+      const calculateSimplePose = (landmarks) => {
+        // 使用关键点计算简单的头部姿态
+        // 这里是简化版本，实际项目中应该使用更准确的算法
+        const nose = landmarks[1];
+        const leftEye = landmarks[33];
+        const rightEye = landmarks[362];
+        
+        // 计算Roll角度
+        const eyeDiff = {
+          x: rightEye.x - leftEye.x,
+          y: rightEye.y - leftEye.y
+        };
+        const roll = Math.atan2(eyeDiff.y, eyeDiff.x) * (180 / Math.PI);
+        
+        return {
+          yaw: 0,   // 简化为0，实际需要更复杂计算
+          pitch: 0, // 简化为0，实际需要更复杂计算
+          roll: roll
+        };
+      };
+      
+      // 变化分数计算 (简化版本)
+      let lastExpr = {};
+      let lastPose = { yaw: 0, pitch: 0, roll: 0 };
+      let lastTimestamp = 0;
+      
+      const calculateDeltaScore = (expr, pose, timestamp) => {
+        if (timestamp - lastTimestamp < 100) { // 限制频率
+          return 0;
+        }
+        
+        let exprDelta = 0;
+        let poseDelta = 0;
+        
+        // 表情变化
+        Object.keys(expr).forEach(key => {
+          const curr = expr[key] || 0;
+          const prev = lastExpr[key] || 0;
+          exprDelta += Math.abs(curr - prev);
+        });
+        
+        // 姿态变化
+        poseDelta = Math.abs(pose.roll - lastPose.roll) / 90; // 归一化到0-1
+        
+        // 更新历史
+        lastExpr = { ...expr };
+        lastPose = { ...pose };
+        lastTimestamp = timestamp;
+        
+        return Math.min(exprDelta + poseDelta, 1.0);
+      };
+      
+      // 消息处理
+      self.onmessage = async (event) => {
+        const { type, data } = event.data;
+        
+        switch (type) {
+          case 'init':
+            await initializeFaceLandmarker();
+            break;
+            
+          case 'process-frame':
+            if (data.imageData) {
+              processFrame(
+                data.imageData, 
+                data.timestamp, 
+                data.videoWidth, 
+                data.videoHeight
+              );
+            }
+            break;
+            
+          case 'destroy':
+            // 清理资源
+            faceLandmarker = null;
+            isInitialized = false;
+            canvas = null;
+            ctx = null;
+            break;
+            
+          default:
+            console.warn('Unknown message type:', type);
+        }
+      };
+    `;
+    
+    // 创建Blob URL
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    
+    // 创建传统Worker
+    const worker = new Worker(workerUrl);
+    
+    // 清理URL (可选，避免内存泄漏)
+    worker.addEventListener('error', () => {
+      URL.revokeObjectURL(workerUrl);
+    });
+    
+    return worker;
+  }
+
+  /**
    * 设置视频处理管道
    */
-  private async setupVideoPipeline(config: MediaConfig): Promise<void> {
+  private async setupVideoPipeline(_config: MediaConfig): Promise<void> {
     if (!this.videoElement) throw new Error('Video element not initialized');
 
-    // 创建OffscreenCanvas用于Worker
-    this.offscreenCanvas = new OffscreenCanvas(
-      config.video.width,
-      config.video.height
-    );
+    // 创建传统Worker而不是模块Worker
+    this.videoWorker = this.createTraditionalWorker();
 
-    // 创建视频处理Worker
-    this.videoWorker = new Worker('/workers/face-detector.js', {
-      type: 'module'
+    // 初始化Worker
+    this.videoWorker.postMessage({
+      type: 'init'
     });
 
-    // 传输OffscreenCanvas到Worker
-    this.videoWorker.postMessage({
-      type: 'init',
-      canvas: this.offscreenCanvas,
-      config: {
-        width: config.video.width,
-        height: config.video.height,
-        processingRate: config.video.processingRate || 15
-      }
-    }, [this.offscreenCanvas]);
-
-    // 监听人脸事件
+    // 监听Worker消息
     this.videoWorker.onmessage = (event) => {
       const { type, data } = event.data;
       
-      if (type === 'face-event') {
-        this.eventBus.publish({
-          type: 'face',
-          t: Date.now(),
-          deltaScore: data.deltaScore,
-          expr: data.expr,
-          pose: data.pose
-        } as FaceEvent);
+      switch (type) {
+        case 'ready':
+          console.log('✅ Face detection worker ready');
+          break;
+          
+        case 'face-event':
+          this.eventBus.publish({
+            type: 'face',
+            t: Date.now(),
+            deltaScore: data.deltaScore,
+            expr: data.expr,
+            pose: data.pose
+          } as FaceEvent);
+          break;
+          
+        case 'error':
+          console.error('❌ Face detection worker error:', data.error);
+          break;
       }
     };
 
@@ -343,8 +544,11 @@ export class MediaCapture {
     this.audioWorklet = null;
     
     // 清理视频资源
-    this.videoWorker?.terminate();
-    this.videoWorker = null;
+    if (this.videoWorker) {
+      this.videoWorker.postMessage({ type: 'destroy' });
+      this.videoWorker.terminate();
+      this.videoWorker = null;
+    }
     
     if (this.videoElement) {
       this.videoElement.srcObject = null;

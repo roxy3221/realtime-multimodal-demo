@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Stream Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        video { width: 320px; height: 240px; border: 1px solid #ccc; }
+        .status { margin: 10px 0; padding: 10px; background: #f5f5f5; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <h1>Video Stream Test</h1>
+    
+    <video id="video" autoplay muted playsinline></video>
+    
+    <div id="status" class="status">
+        点击测试按钮开始...
+    </div>
+    
+    <button id="testBtn" onclick="testVideoStream()">测试视频流</button>
+    <button id="debugBtn" onclick="debugVideo()">调试视频元素</button>
+    
+    <div id="debugInfo" class="status" style="margin-top: 20px;">
+        <h3>调试信息：</h3>
+        <div id="debugDetails"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const status = document.getElementById('status');
+        const debugDetails = document.getElementById('debugDetails');
+        
+        let stream = null;
+        
+        async function testVideoStream() {
+            try {
+                status.textContent = '正在获取摄像头权限...';
+                status.className = 'status';
+                
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: true
+                };
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                console.log('Stream获取成功:', stream);
+                console.log('Video tracks:', stream.getVideoTracks());
+                console.log('Audio tracks:', stream.getAudioTracks());
+                
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    status.textContent = `视频流连接成功! 分辨率: ${video.videoWidth}x${video.videoHeight}`;
+                    status.className = 'status success';
+                    
+                    debugDetails.innerHTML = `
+                        <strong>Stream ID:</strong> ${stream.id}<br>
+                        <strong>Video Track:</strong> ${stream.getVideoTracks()[0]?.label || 'None'}<br>
+                        <strong>Audio Track:</strong> ${stream.getAudioTracks()[0]?.label || 'None'}<br>
+                        <strong>Video Dimensions:</strong> ${video.videoWidth}x${video.videoHeight}<br>
+                        <strong>Video Ready State:</strong> ${video.readyState}<br>
+                        <strong>Current Time:</strong> ${video.currentTime}
+                    `;
+                };
+                
+                video.onerror = (e) => {
+                    console.error('Video error:', e);
+                    status.textContent = '视频播放错误: ' + e.message;
+                    status.className = 'status error';
+                };
+                
+            } catch (error) {
+                console.error('获取媒体流失败:', error);
+                status.textContent = '获取摄像头失败: ' + error.message;
+                status.className = 'status error';
+                
+                debugDetails.innerHTML = `
+                    <strong>错误类型:</strong> ${error.name}<br>
+                    <strong>错误消息:</strong> ${error.message}<br>
+                    <strong>错误堆栈:</strong> <pre>${error.stack}</pre>
+                `;
+            }
+        }
+        
+        function debugVideo() {
+            console.log('=== Video Element Debug ===');
+            console.log('video.srcObject:', video.srcObject);
+            console.log('video.src:', video.src);
+            console.log('video.currentSrc:', video.currentSrc);
+            console.log('video.readyState:', video.readyState);
+            console.log('video.networkState:', video.networkState);
+            console.log('video.videoWidth:', video.videoWidth);
+            console.log('video.videoHeight:', video.videoHeight);
+            console.log('video.paused:', video.paused);
+            console.log('video.ended:', video.ended);
+            console.log('video.error:', video.error);
+            
+            if (stream) {
+                console.log('=== Stream Debug ===');
+                console.log('stream.id:', stream.id);
+                console.log('stream.active:', stream.active);
+                console.log('Video tracks:', stream.getVideoTracks().map(t => ({
+                    id: t.id,
+                    label: t.label,
+                    enabled: t.enabled,
+                    muted: t.muted,
+                    readyState: t.readyState,
+                    settings: t.getSettings()
+                })));
+                console.log('Audio tracks:', stream.getAudioTracks().map(t => ({
+                    id: t.id,
+                    label: t.label,
+                    enabled: t.enabled,
+                    muted: t.muted,
+                    readyState: t.readyState,
+                    settings: t.getSettings()
+                })));
+            } else {
+                console.log('No stream available');
+            }
+            
+            // 更新调试信息显示
+            const info = `
+                <strong>srcObject:</strong> ${video.srcObject ? 'Set' : 'null'}<br>
+                <strong>readyState:</strong> ${video.readyState}<br>
+                <strong>networkState:</strong> ${video.networkState}<br>
+                <strong>dimensions:</strong> ${video.videoWidth}x${video.videoHeight}<br>
+                <strong>paused:</strong> ${video.paused}<br>
+                <strong>error:</strong> ${video.error ? video.error.message : 'none'}<br>
+                <strong>stream active:</strong> ${stream ? stream.active : 'no stream'}
+            `;
+            debugDetails.innerHTML = info;
+        }
+        
+        // 页面加载完成后的初始调试信息
+        window.addEventListener('load', () => {
+            debugVideo();
+        });
+    </script>
+</body>
+</html>

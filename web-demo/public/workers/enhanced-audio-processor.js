@@ -22,6 +22,12 @@ class EnhancedAudioProcessor extends AudioWorkletProcessor {
     this.thresholdLow = 0.3;
     this.isEventActive = false;
     
+    // ASR音频数据发送
+    this.audioBuffer = [];
+    this.audioBufferSize = Math.floor(this.sampleRate * 0.04); // 40ms buffer for ASR
+    this.lastAudioSend = 0;
+    this.audioSendInterval = 40; // 每40ms发送一次音频数据
+    
     // 增强历史数据管理
     this.history = {
       rms: new Float32Array(60), // 2秒历史@30Hz
@@ -90,22 +96,25 @@ class EnhancedAudioProcessor extends AudioWorkletProcessor {
     }
     
     try {
-      // 1. WebRTC增强RMS计算
+      // 1. 收集音频数据用于ASR
+      this.collectAudioForASR(samples);
+      
+      // 2. WebRTC增强RMS计算
       const rms = this.computeEnhancedRMS(samples);
       
-      // 2. 增强F0检测（关键改进）
+      // 3. 增强F0检测（关键改进）
       const f0Result = this.computeEnhancedF0(samples);
       
-      // 3. WebRTC VAD
+      // 4. WebRTC VAD
       const vadResult = this.computeEnhancedVAD(rms);
       
-      // 4. 频谱特征分析
+      // 5. 频谱特征分析
       const spectralFeatures = this.computeSpectralFeatures(samples);
       
-      // 5. 更新历史数据
+      // 6. 更新历史数据
       this.updateHistory(rms, f0Result.frequency, f0Result.confidence, vadResult.confidence);
       
-      // 6. 变化检测和事件触发
+      // 7. 变化检测和事件触发
       this.detectAndEmitEvents(rms, f0Result, vadResult, spectralFeatures);
       
     } catch (error) {
@@ -113,6 +122,81 @@ class EnhancedAudioProcessor extends AudioWorkletProcessor {
     }
     
     return true;
+  }
+
+  /**
+   * 收集音频数据用于ASR
+   */
+  collectAudioForASR(samples) {
+    // 只在VAD激活时收集音频
+    if (!this.vadState.isActive) {
+      return;
+    }
+
+    // 转换为16kHz单声道（阿里云ASR要求）
+    const downsampled = this.downsampleTo16kHz(samples);
+    
+    // 添加到音频缓冲区
+    this.audioBuffer.push(...downsampled);
+    
+    // 当缓冲区达到指定大小时发送
+    if (this.audioBuffer.length >= this.audioBufferSize) {
+      const now = Date.now();
+      if (now - this.lastAudioSend >= this.audioSendInterval) {
+        // 转换为Float32Array并发送
+        const audioData = new Float32Array(this.audioBuffer.splice(0, this.audioBufferSize));
+        
+        // 转换为16位PCM
+        const pcmData = this.float32ToPCM16(audioData);
+        
+        this.port.postMessage({
+          type: 'audio-data',
+          data: {
+            audioBuffer: pcmData,
+            sampleRate: 16000,
+            timestamp: now
+          }
+        });
+        
+        this.lastAudioSend = now;
+      }
+    }
+  }
+
+  /**
+   * 下采样到16kHz
+   */
+  downsampleTo16kHz(samples) {
+    const targetSampleRate = 16000;
+    const ratio = this.sampleRate / targetSampleRate;
+    
+    if (ratio === 1) {
+      return Array.from(samples);
+    }
+    
+    const result = [];
+    for (let i = 0; i < samples.length; i += ratio) {
+      result.push(samples[Math.floor(i)]);
+    }
+    
+    return result;
+  }
+
+  /**
+   * 将Float32转换为16位PCM
+   */
+  float32ToPCM16(float32Array) {
+    const pcm16 = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(pcm16);
+    
+    for (let i = 0; i < float32Array.length; i++) {
+      // 将[-1, 1]范围的浮点数转换为[-32768, 32767]的16位整数
+      const sample = Math.max(-1, Math.min(1, float32Array[i]));
+      const pcmSample = Math.round(sample * 32767);
+      view.setInt16(i * 2, pcmSample, true); // little-endian
+    }
+    
+    return pcm16;
   }
 
   /**

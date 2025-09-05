@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MediaPipe Test</title>
+</head>
+<body>
+    <h1>MediaPipe UMD Loading Test</h1>
+    <div id="status">Loading...</div>
+    
+    <script>
+        // Test MediaPipe loading in main thread
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js';
+        script.onload = () => {
+            console.log('✅ MediaPipe script loaded');
+            const visionNS = window.vision || globalThis.vision;
+            if (visionNS && visionNS.FilesetResolver && visionNS.FaceLandmarker) {
+                document.getElementById('status').innerHTML = '✅ MediaPipe UMD loaded successfully!<br>FilesetResolver: ✓<br>FaceLandmarker: ✓';
+                console.log('✅ MediaPipe classes available:', visionNS);
+            } else {
+                document.getElementById('status').innerHTML = '❌ MediaPipe classes missing';
+                console.error('❌ MediaPipe classes missing:', visionNS);
+            }
+        };
+        script.onerror = () => {
+            document.getElementById('status').innerHTML = '❌ Failed to load MediaPipe script';
+            console.error('❌ Failed to load MediaPipe script');
+        };
+        document.head.appendChild(script);
+        
+        // Test Worker loading
+        setTimeout(() => {
+            try {
+                const worker = new Worker('/src/workers/face-detector.js', { type: 'classic' });
+                worker.postMessage({ type: 'init' });
+                worker.onmessage = (e) => {
+                    console.log('Worker message:', e.data);
+                    if (e.data.type === 'status' && e.data.data.initialized) {
+                        document.getElementById('status').innerHTML += '<br>✅ Worker initialized successfully!';
+                    } else if (e.data.type === 'error') {
+                        document.getElementById('status').innerHTML += '<br>❌ Worker error: ' + e.data.data.message;
+                    }
+                };
+                worker.onerror = (error) => {
+                    console.error('Worker error:', error);
+                    document.getElementById('status').innerHTML += '<br>❌ Worker failed to start: ' + error.message;
+                };
+            } catch (error) {
+                console.error('Failed to create worker:', error);
+                document.getElementById('status').innerHTML += '<br>❌ Failed to create worker: ' + error.message;
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

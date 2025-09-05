@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { copyFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
@@ -9,6 +10,7 @@ export default defineConfig({
   plugins: [
     react(), 
     wasm(),
+    // basicSsl(), // 暂时禁用 HTTPS，避免证书问题导致 MediaPipe 加载失败
     // 自定义插件：复制 MediaPipe WASM 文件
     {
       name: 'copy-mediapipe-assets',
@@ -44,16 +46,15 @@ export default defineConfig({
     plugins: () => [wasm()]
   },
   server: {
-    https: {
-      cert: undefined,
-      key: undefined
-    },
     host: '0.0.0.0',
     port: 5173,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Resource-Policy': 'cross-origin'
+    },
+    fs: {
+      allow: ['..']
     }
   },
   build: {
