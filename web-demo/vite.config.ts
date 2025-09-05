@@ -30,11 +30,11 @@ export default defineConfig({
               );
               console.log(`✅ Copied ${file} to dist`);
             } catch (e) {
-              console.warn(`⚠️ Could not copy ${file}:`, e.message);
+              console.warn(`⚠️ Could not copy ${file}:`, e instanceof Error ? e.message : String(e));
             }
           });
         } catch (e) {
-          console.warn('⚠️ MediaPipe WASM copy failed:', e.message);
+          console.warn('⚠️ MediaPipe WASM copy failed:', e instanceof Error ? e.message : String(e));
         }
       }
     }
