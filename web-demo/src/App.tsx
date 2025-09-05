@@ -150,30 +150,31 @@ function App() {
       await mediaCaptureRef.current.initialize();
       
       // 设置视频预览
-      const previewElement = mediaCaptureRef.current.getPreviewElement();
-      if (previewElement && videoPreviewRef.current) {
-        // 直接设置srcObject而不是从previewElement获取
-        const stream = previewElement.srcObject as MediaStream;
-        if (stream) {
-          videoPreviewRef.current.srcObject = stream;
-          
-          // 强制播放视频
-          videoPreviewRef.current.onloadeddata = () => {
-            console.log('✅ WebRTC video preview ready');
-            if (videoPreviewRef.current) {
-              videoPreviewRef.current.play().catch(e => {
-                console.warn('Video play failed, this is normal for autoplay restrictions:', e);
-              });
-            }
-          };
-          
-          // 添加错误处理
-          videoPreviewRef.current.onerror = (e) => {
-            console.error('❌ Video preview error:', e);
-          };
-        } else {
-          console.warn('⚠️ No media stream found in preview element');
-        }
+      const stream = mediaCaptureRef.current.getStream();
+      if (stream && videoPreviewRef.current) {
+        console.log('🎥 Setting up video preview with stream:', stream);
+        
+        videoPreviewRef.current.srcObject = stream;
+        videoPreviewRef.current.autoplay = true;
+        videoPreviewRef.current.muted = true;
+        videoPreviewRef.current.playsInline = true;
+        
+        // 强制播放视频
+        videoPreviewRef.current.onloadeddata = () => {
+          console.log('✅ Video preview ready');
+          if (videoPreviewRef.current) {
+            videoPreviewRef.current.play().catch(e => {
+              console.warn('Video play failed, this is normal for autoplay restrictions:', e);
+            });
+          }
+        };
+        
+        // 添加错误处理
+        videoPreviewRef.current.onerror = (e) => {
+          console.error('❌ Video preview error:', e);
+        };
+      } else {
+        console.warn('⚠️ No media stream or video ref available');
       }
       
       // 开始采集

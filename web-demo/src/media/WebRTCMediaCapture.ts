@@ -362,6 +362,13 @@ export class WebRTCMediaCapture {
   }
 
   /**
+   * 获取媒体流
+   */
+  getStream(): MediaStream | null {
+    return this.localStream;
+  }
+
+  /**
    * 获取媒体流状态
    */
   getStatus() {

@@ -7,6 +7,9 @@
 let faceLandmarker = null;
 let isInitialized = false;
 
+// 检查 MediaPipe 是否可用
+let MediaPipeVision = null;
+
 // 画布和上下文
 let canvas = null;
 let ctx = null;
