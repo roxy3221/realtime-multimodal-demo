@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
-import basicSsl from '@vitejs/plugin-basic-ssl'
 import { copyFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
