@@ -66,14 +66,15 @@ function App() {
         
         // 根据事件类型更新UI数据
         if (event.type === 'face') {
+          console.log('🎭 Face event received:', event);
           setFaceMetrics({
             headPose: {
               yaw: event.pose.yaw,
               pitch: event.pose.pitch
             },
             expression: {
-              type: String(event.expr.type),
-              confidence: Math.round(event.expr.confidence * 100)
+              type: String(event.expr.type || '中性'),
+              confidence: Math.round((event.expr.confidence || 0) * 100)
             },
             eyeState: {
               state: String(event.expr.type) === '疲劳' ? '疲劳' : '正常',
@@ -151,11 +152,28 @@ function App() {
       // 设置视频预览
       const previewElement = mediaCaptureRef.current.getPreviewElement();
       if (previewElement && videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = previewElement.srcObject;
-        // 添加WebRTC视频就绪事件
-        videoPreviewRef.current.onloadeddata = () => {
-          console.log('✅ WebRTC video preview ready');
-        };
+        // 直接设置srcObject而不是从previewElement获取
+        const stream = previewElement.srcObject as MediaStream;
+        if (stream) {
+          videoPreviewRef.current.srcObject = stream;
+          
+          // 强制播放视频
+          videoPreviewRef.current.onloadeddata = () => {
+            console.log('✅ WebRTC video preview ready');
+            if (videoPreviewRef.current) {
+              videoPreviewRef.current.play().catch(e => {
+                console.warn('Video play failed, this is normal for autoplay restrictions:', e);
+              });
+            }
+          };
+          
+          // 添加错误处理
+          videoPreviewRef.current.onerror = (e) => {
+            console.error('❌ Video preview error:', e);
+          };
+        } else {
+          console.warn('⚠️ No media stream found in preview element');
+        }
       }
       
       // 开始采集

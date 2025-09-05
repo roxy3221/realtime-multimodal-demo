@@ -31,23 +31,27 @@ const detector = {
 };
 
 /**
- * 初始化Face Landmarker
+ * 初始化Face Landmarker - 生产环境优化版本
  */
 async function initializeFaceLandmarker() {
   try {
-    // 导入MediaPipe Tasks Vision
-    const { FaceLandmarker, FilesetResolver } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3');
+    console.log('🔄 Initializing Face Landmarker for production...');
     
-    // 创建fileset resolver
+    // 使用本地安装的 MediaPipe Tasks Vision (从 node_modules)
+    const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+    
+    // 配置 WASM 文件路径 - 指向 node_modules 中的文件
     const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm'
+      // 在 Vercel 等生产环境中，使用相对路径从 node_modules 加载
+      '/node_modules/@mediapipe/tasks-vision/wasm'
     );
     
-    // 初始化Face Landmarker
+    // 使用更可靠的模型路径配置
     faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-        delegate: 'GPU'
+        // 优先尝试本地模型，失败则使用 CDN
+        modelAssetPath: await getModelPath(),
+        delegate: 'GPU' // 优先GPU，失败会自动降级到CPU
       },
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
@@ -56,20 +60,55 @@ async function initializeFaceLandmarker() {
     });
     
     isInitialized = true;
-    console.log('✅ Face Landmarker initialized');
+    console.log('✅ Face Landmarker initialized successfully');
     
     postMessage({
       type: 'status',
-      data: { initialized: true }
+      data: { initialized: true, mode: 'mediapipe' }
     });
     
   } catch (error) {
     console.error('❌ Face Landmarker initialization failed:', error);
+    console.error('Error details:', error.stack);
+    
+    // 发送详细错误信息，但不降级到模拟模式
     postMessage({
       type: 'error',
-      data: { message: error.message }
+      data: { 
+        message: `MediaPipe initialization failed: ${error.message}`,
+        stack: error.stack,
+        suggestion: 'Please check network connectivity and CORS settings'
+      }
     });
   }
+}
+
+/**
+ * 获取最佳可用的模型路径
+ */
+async function getModelPath() {
+  const modelPaths = [
+    // 1. 尝试本地静态资源
+    '/models/face_landmarker.task',
+    // 2. 尝试 CDN (Google 官方)
+    'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+  ];
+  
+  for (const path of modelPaths) {
+    try {
+      const response = await fetch(path, { method: 'HEAD' });
+      if (response.ok) {
+        console.log(`✅ Using model from: ${path}`);
+        return path;
+      }
+    } catch (e) {
+      console.log(`⚠️ Model not available at: ${path}`);
+    }
+  }
+  
+  // 默认使用 Google CDN
+  console.log('📡 Using default Google CDN model');
+  return 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 }
 
 /**
@@ -109,13 +148,18 @@ onmessage = async function(e) {
 };
 
 /**
- * 处理视频帧
+ * 处理视频帧 - MediaPipe 专用版本
  */
 async function processVideoFrame(frameData) {
   const { timestamp, imageData, videoWidth, videoHeight } = frameData;
   
   if (!imageData) {
     console.warn('⚠️ No imageData provided for frame processing');
+    return;
+  }
+  
+  if (!faceLandmarker) {
+    console.warn('⚠️ Face Landmarker not initialized');
     return;
   }
   
@@ -129,7 +173,7 @@ async function processVideoFrame(frameData) {
     // 将ImageData绘制到canvas
     ctx.putImageData(imageData, 0, 0);
     
-    // MediaPipe检测 - 使用HTMLCanvasElement
+    // MediaPipe检测 - 使用优化的时间戳
     const results = faceLandmarker.detectForVideo(canvas, timestamp);
     
     if (results.faceLandmarks && results.faceLandmarks.length > 0) {
@@ -150,12 +194,15 @@ async function processVideoFrame(frameData) {
     }
     
   } catch (error) {
-    console.error('Frame processing error:', error);
-    // 重新初始化如果检测到模型错误
+    console.error('❌ Frame processing error:', error);
+    
+    // MediaPipe 特定错误处理
     if (error.message.includes('model') || error.message.includes('INVALID_ARGUMENT')) {
       console.log('🔄 Attempting to reinitialize Face Landmarker...');
       isInitialized = false;
       await initializeFaceLandmarker();
+    } else if (error.message.includes('GPU')) {
+      console.log('⚠️ GPU processing failed, consider using CPU delegate');
     }
   }
 }
