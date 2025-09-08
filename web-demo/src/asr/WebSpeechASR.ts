@@ -31,6 +31,13 @@ export class WebSpeechASR {
     
     if (!SpeechRecognition) {
       console.error('❌ Speech Recognition not supported in this browser');
+      console.error('💡 This browser does not support Web Speech API. Supported browsers: Chrome, Edge');
+      return;
+    }
+
+    // 检查是否在安全上下文中（HTTPS或localhost）
+    if (!window.isSecureContext) {
+      console.error('❌ Speech Recognition requires HTTPS or localhost');
       return;
     }
 
@@ -38,28 +45,106 @@ export class WebSpeechASR {
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
     this.recognition.lang = 'zh-CN'; // 默认中文，可配置
+    this.recognition.maxAlternatives = 1;
+
+    // 处理识别开始
+    this.recognition.onstart = () => {
+      console.log('🎤 Speech recognition started successfully');
+    };
 
     // 处理识别结果
     this.recognition.onresult = (event: SpeechRecognitionEvent) => {
       this.handleRecognitionResult(event);
     };
 
-    // 错误处理
+    // 改进的错误处理
     this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error('❌ Speech recognition error:', event.error);
-      if (event.error === 'no-speech' || event.error === 'aborted') {
-        // 正常情况，重新启动
-        this.restart();
-      }
+      this.handleRecognitionError(event.error);
     };
 
     // 识别结束处理
     this.recognition.onend = () => {
+      console.log('🔄 Speech recognition ended');
       if (this.isActive) {
-        console.log('🔄 Speech recognition ended, restarting...');
-        this.restart();
+        // 延迟重启，避免过于频繁
+        setTimeout(() => {
+          if (this.isActive) {
+            this.restart();
+          }
+        }, 1000);
       }
     };
+  }
+
+  /**
+   * 处理识别错误
+   */
+  private handleRecognitionError(error: string): void {
+    console.error('❌ Speech recognition error:', error);
+    
+    switch (error) {
+      case 'not-allowed':
+        console.error('🚫 Microphone permission denied. Please allow microphone access.');
+        this.eventBus.publish({
+          type: 'asr',
+          t: Date.now(),
+          textDelta: '[麦克风权限被拒绝，请允许麦克风访问]',
+          isFinal: true,
+          currentWPM: 0
+        } as any);
+        this.stop();
+        break;
+        
+      case 'network':
+        console.error('🌐 Network error. Check internet connection.');
+        this.eventBus.publish({
+          type: 'asr',
+          t: Date.now(),
+          textDelta: '[网络错误，请检查网络连接]',
+          isFinal: true,
+          currentWPM: 0
+        } as any);
+        // 网络错误时尝试重启
+        this.restart();
+        break;
+        
+      case 'no-speech':
+        console.warn('⚠️ No speech detected');
+        // 无语音是正常情况，继续运行
+        break;
+        
+      case 'aborted':
+        console.warn('⚠️ Speech recognition aborted');
+        // 被中止时不重启，等待用户操作
+        break;
+        
+      case 'audio-capture':
+        console.error('🎤 Failed to capture audio. Check microphone.');
+        this.eventBus.publish({
+          type: 'asr',
+          t: Date.now(),
+          textDelta: '[音频捕获失败，请检查麦克风]',
+          isFinal: true,
+          currentWPM: 0
+        } as any);
+        break;
+        
+      case 'service-not-allowed':
+        console.error('🔒 Speech recognition service not allowed');
+        this.eventBus.publish({
+          type: 'asr',
+          t: Date.now(),
+          textDelta: '[语音识别服务被禁用]',
+          isFinal: true,
+          currentWPM: 0
+        } as any);
+        break;
+        
+      default:
+        console.error('❓ Unknown error:', error);
+        this.restart();
+        break;
+    }
   }
 
   /**
@@ -157,23 +242,92 @@ export class WebSpeechASR {
   /**
    * 启动语音识别
    */
-  start(): boolean {
+  async start(): Promise<boolean> {
     if (!this.recognition) {
       console.error('❌ Speech Recognition not available');
       return false;
     }
 
+    if (this.isActive) {
+      console.warn('⚠️ Speech recognition already active');
+      return true;
+    }
+
     try {
+      // 首先检查麦克风权限
+      const permissionStatus = await this.checkMicrophonePermission();
+      if (!permissionStatus) {
+        console.error('❌ Microphone permission denied');
+        return false;
+      }
+
       this.recognition.start();
       this.isActive = true;
       this.currentTranscript = '';
       this.lastTranscriptLength = 0;
       this.wordHistory = [];
       
-      console.log('🎤 Speech recognition started');
+      console.log('🎤 Speech recognition starting...');
       return true;
     } catch (error) {
       console.error('❌ Failed to start speech recognition:', error);
+      
+      // 根据错误类型提供不同的提示
+      if (error instanceof Error) {
+        if (error.message.includes('already started')) {
+          console.warn('⚠️ Speech recognition already started elsewhere');
+          return false;
+        } else if (error.message.includes('not-allowed')) {
+          console.error('🚫 Microphone access denied');
+          return false;
+        }
+      }
+      
+      return false;
+    }
+  }
+
+  /**
+   * 检查麦克风权限
+   */
+  private async checkMicrophonePermission(): Promise<boolean> {
+    try {
+      // 使用 navigator.permissions API 检查权限（如果可用）
+      if ('permissions' in navigator) {
+        const permission = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        
+        if (permission.state === 'denied') {
+          console.error('🚫 Microphone permission explicitly denied');
+          return false;
+        }
+        
+        if (permission.state === 'granted') {
+          console.log('✅ Microphone permission already granted');
+          return true;
+        }
+        
+        // 如果是 'prompt' 状态，继续尝试获取权限
+      }
+
+      // 尝试获取媒体流来测试权限
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop()); // 立即停止
+      console.log('✅ Microphone access granted');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Microphone permission check failed:', error);
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          console.error('🚫 User denied microphone access');
+        } else if (error.name === 'NotFoundError') {
+          console.error('🎤 No microphone found');
+        } else if (error.name === 'NotReadableError') {
+          console.error('🔧 Microphone is being used by another application');
+        }
+      }
+      
       return false;
     }
   }

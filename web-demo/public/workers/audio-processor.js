@@ -67,6 +67,17 @@ class AudioProcessor extends AudioWorkletProcessor {
     const channelData = input[0];
     const frameCount = channelData.length;
     
+    // 转换为16bit PCM数据用于阿里云ASR
+    const pcmData = this.convertToPCM16(channelData);
+    
+    // 发送音频数据给阿里云ASR
+    this.port.postMessage({
+      type: 'audio-data',
+      audioBuffer: pcmData.buffer,
+      sampleRate: this.sampleRate,
+      frameCount: frameCount
+    }, [pcmData.buffer]); // 使用Transferable Objects提高性能
+    
     // 分析音频特征
     const rms = this.computeRMS(channelData);
     const f0 = this.computeF0(channelData);
@@ -80,6 +91,24 @@ class AudioProcessor extends AudioWorkletProcessor {
     this.checkEventTrigger(deltaScore, rms, f0);
     
     return true;
+  }
+  
+  /**
+   * 转换Float32音频数据为16bit PCM
+   */
+  convertToPCM16(float32Array) {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    let offset = 0;
+    
+    for (let i = 0; i < float32Array.length; i++, offset += 2) {
+      // 将-1.0到1.0的float值转换为-32768到32767的int16值
+      let sample = Math.max(-1, Math.min(1, float32Array[i]));
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, sample, true); // little endian
+    }
+    
+    return new Uint8Array(buffer);
   }
   
   /**

@@ -24,6 +24,7 @@ interface FaceDetectionResults {
   faceLandmarks?: unknown[];
 }
 import { WebSpeechASR } from '../asr/WebSpeechASR';
+import { AlibabaASR } from '../asr/AlibabaASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 
 export class SimpleMediaCapture {
@@ -39,11 +40,13 @@ export class SimpleMediaCapture {
   private lastFaceVector: number[] | null = null;
   private faceChangeScore = 0;
   private lastFaceEventTime = 0;
+  private faceDetectionTimer: number | null = null;
+  private lastRegularFaceUpdate = 0;
   
   // 音频分析状态
   private lastProsodyEventTime = 0;
   
-  private asr: WebSpeechASR | null = null;
+  private asr: WebSpeechASR | AlibabaASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -160,6 +163,9 @@ export class SimpleMediaCapture {
       this.audioWorklet.port.onmessage = (event) => {
         if (event.data.type === 'prosody-event') {
           this.handleProsodyEvent(event.data.data);
+        } else if (event.data.type === 'audio-data' && this.asr instanceof AlibabaASR) {
+          // 如果使用阿里云ASR，发送音频数据
+          this.asr.sendAudio(event.data.audioBuffer);
         }
       };
       
@@ -179,10 +185,17 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 设置ASR
+   * 设置ASR - 使用阿里云实时ASR
    */
   private setupASR(): void {
-    this.asr = new WebSpeechASR(this.eventBus);
+    console.log('🌐 Using Alibaba Cloud ASR');
+    this.asr = new AlibabaASR(this.eventBus, {
+      apiKey: 'sk-467167e4565f4c9ca5ecc56b682b4a1e',
+      model: 'paraformer-realtime-v2',
+      sampleRate: 16000,
+      format: 'pcm',
+      enableWordsInfo: true
+    });
   }
 
   /**
@@ -213,8 +226,8 @@ export class SimpleMediaCapture {
     
     this.isCapturing = true;
     
-    // 开始处理循环
-    this.processVideoFrame();
+    // 开始处理循环 - 每秒检测但只显示显著变化
+    this.startRegularFaceDetection();
     
     // 启动ASR
     if (this.asr) {
@@ -225,9 +238,26 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 处理视频帧 - 主线程人脸检测
+   * 启动定期人脸检测 - 每秒检测一次
    */
-  private processVideoFrame = (): void => {
+  private startRegularFaceDetection(): void {
+    if (this.faceDetectionTimer) {
+      clearInterval(this.faceDetectionTimer);
+    }
+    
+    // 每秒检测一次（1000ms间隔）
+    this.faceDetectionTimer = window.setInterval(() => {
+      this.performFaceDetection();
+    }, 1000);
+    
+    // 立即执行一次检测
+    this.performFaceDetection();
+  }
+  
+  /**
+   * 执行人脸检测
+   */
+  private performFaceDetection(): void {
     if (!this.isCapturing || !this.videoElement || !this.canvas || !this.canvasContext || !this.faceLandmarker) {
       return;
     }
@@ -240,24 +270,21 @@ export class SimpleMediaCapture {
       const results = this.faceLandmarker.detectForVideo(this.videoElement, performance.now());
       
       if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
-        this.processFaceResults(results);
+        this.processFaceResults(results, true); // 强制更新UI状态
+      } else {
+        // 没有检测到人脸时也更新UI
+        this.updateFaceMetricsForNoFace();
       }
-      
-      // 继续下一帧
-      this.animationFrame = requestAnimationFrame(this.processVideoFrame);
     } catch (error) {
-      console.error('❌ Error processing video frame:', error);
-      // 继续处理，不中断
-      this.animationFrame = requestAnimationFrame(this.processVideoFrame);
+      console.error('❌ Error in face detection:', error);
     }
-  };
+  }
 
   /**
    * 处理人脸检测结果
    */
-  private processFaceResults(results: FaceDetectionResults): void {
+  private processFaceResults(results: FaceDetectionResults, forceUpdate: boolean = false): void {
     const blendshapes = results.faceBlendshapes[0];
-    // const landmarks = results.faceLandmarks[0];
     
     // 提取表情特征向量
     const expressionVector = blendshapes.categories.map((category: BlendshapeCategory) => category.score);
@@ -273,14 +300,73 @@ export class SimpleMediaCapture {
     this.faceChangeScore = changeScore;
     this.lastFaceVector = normalizedVector;
     
-    // 检查是否触发事件
+    const now = performance.now();
+    
+    // 总是更新UI状态（每秒更新），但只在显著变化时触发事件
+    if (forceUpdate || now - this.lastRegularFaceUpdate > 800) { // 至少800ms更新一次UI
+      this.sendFaceUpdate(blendshapes, normalizedVector, changeScore, false);
+      this.lastRegularFaceUpdate = now;
+    }
+    
+    // 检查是否需要触发显著变化事件
     this.checkFaceEventTrigger(blendshapes, normalizedVector, changeScore);
+  }
+  
+  /**
+   * 处理无人脸情况
+   */
+  private updateFaceMetricsForNoFace(): void {
+    const now = performance.now();
+    if (now - this.lastRegularFaceUpdate > 800) {
+      // 发送无人脸状态更新
+      const faceEvent: FaceEvent = {
+        type: 'face',
+        t: now,
+        timestamp: now,
+        deltaScore: 0,
+        expression: { type: '无人脸', confidence: 0 },
+        pose: { yaw: 0, pitch: 0, roll: 0 },
+        confidence: 0
+      };
+      
+      this.eventBus.emit('face', faceEvent);
+      this.lastRegularFaceUpdate = now;
+    }
   }
 
   /**
-   * 检查人脸事件触发
+   * 发送人脸更新
    */
-  private checkFaceEventTrigger(blendshapes: Blendshapes, _normalizedVector: number[], changeScore: number): void {
+  private sendFaceUpdate(blendshapes: Blendshapes, _normalizedVector: number[], changeScore: number, isSignificantChange: boolean): void {
+    const now = performance.now();
+    
+    // 计算头部姿态
+    const headPose = this.calculateHeadPose();
+    
+    // 提取主要表情
+    const mainExpression = this.extractMainExpression(blendshapes);
+    
+    const faceEvent: FaceEvent = {
+      type: 'face',
+      t: now,
+      timestamp: now,
+      deltaScore: changeScore,
+      expression: mainExpression,
+      pose: headPose,
+      confidence: isSignificantChange ? 0.9 : Math.max(0.3, 0.8 - changeScore)
+    };
+    
+    this.eventBus.emit('face', faceEvent);
+    
+    if (isSignificantChange) {
+      console.log('👤 Significant face change detected:', { changeScore, expression: mainExpression });
+    }
+  }
+  
+  /**
+   * 检查人脸事件触发 - 只用于显著变化事件
+   */
+  private checkFaceEventTrigger(blendshapes: Blendshapes, normalizedVector: number[], changeScore: number): void {
     const now = performance.now();
     const cooldownTime = this.config.detection!.cooldownMs;
     
@@ -289,28 +375,13 @@ export class SimpleMediaCapture {
       return;
     }
     
-    // 阈值检查
-    if (changeScore > this.config.detection!.thresholds.high) {
-      // 计算头部姿态
-      const headPose = this.calculateHeadPose();
-      
-      // 提取主要表情
-      const mainExpression = this.extractMainExpression(blendshapes);
-      
-      const faceEvent: FaceEvent = {
-        type: 'face',
-        t: now,
-        timestamp: now,
-        deltaScore: changeScore,
-        expression: mainExpression,
-        pose: headPose,
-        confidence: 0.8
-      };
-      
-      this.eventBus.emit('face', faceEvent);
+    // 降低阈值，使其更容易触发（从默认的0.6降低到0.15）
+    const lowerThreshold = 0.15;
+    
+    if (changeScore > lowerThreshold) {
+      // 发送显著变化事件
+      this.sendFaceUpdate(blendshapes, normalizedVector, changeScore, true);
       this.lastFaceEventTime = now;
-      
-      console.log('👤 Face event triggered:', { changeScore, expression: mainExpression });
     }
   }
 
@@ -385,6 +456,11 @@ export class SimpleMediaCapture {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
+    }
+    
+    if (this.faceDetectionTimer) {
+      clearInterval(this.faceDetectionTimer);
+      this.faceDetectionTimer = null;
     }
     
     if (this.asr) {
