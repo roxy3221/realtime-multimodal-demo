@@ -24,12 +24,12 @@ export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
   audio_buffer_size: 4096,
 };
 
-// 触发配置（来自Claude.md）
+// 触发配置（来自Claude.md，调整为更保守的阈值）
 export const DEFAULT_TRIGGER_CONFIG: TriggerConfig = {
   face: {
-    T_high: 0.6,       // 进入阈值
-    T_low: 0.4,        // 退出阈值  
-    cooldown_ms: 1200, // 冷却时间
+    T_high: 0.3,       // 降低进入阈值，但对于余弦距离这个值更合理 
+    T_low: 0.2,        // 降低退出阈值
+    cooldown_ms: 2000, // 增加冷却时间到2秒，避免频繁触发
     min_frames: 3,     // 最小连续帧数
   },
   prosody: {
@@ -39,7 +39,7 @@ export const DEFAULT_TRIGGER_CONFIG: TriggerConfig = {
     min_samples: 5,    // 最小连续采样数
   },
   global: {
-    max_event_rate: 2.0, // 最大2事件/秒
+    max_event_rate: 1.0, // 降低到最大1事件/秒
   },
 };
 
@@ -61,10 +61,10 @@ export const DEFAULT_MEDIA_CONFIG: MediaConfig = {
     frameSize: 128,    // 添加帧大小
   },
   detection: {
-    cooldownMs: 1200,  // 冷却时间
+    cooldownMs: 2000,  // 与face.cooldown_ms保持一致
     thresholds: {
-      high: 0.6,       // 进入阈值
-      low: 0.4,        // 退出阈值
+      high: 0.3,       // 与face.T_high保持一致
+      low: 0.2,        // 与face.T_low保持一致
     },
   },
 };

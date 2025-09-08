@@ -25,6 +25,7 @@ interface FaceDetectionResults {
 }
 import { WebSpeechASR } from '../asr/WebSpeechASR';
 import { AlibabaASR } from '../asr/AlibabaASR';
+import { AlibabaWebSocketASR } from '../asr/AlibabaWebSocketASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 import { logASRDiagnostics } from '../utils/asrUtils';
 
@@ -47,7 +48,7 @@ export class SimpleMediaCapture {
   // 音频分析状态
   private lastProsodyEventTime = 0;
   
-  private asr: WebSpeechASR | AlibabaASR | null = null;
+  private asr: WebSpeechASR | AlibabaASR | AlibabaWebSocketASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -184,7 +185,7 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 设置ASR - 使用阿里云实时ASR
+   * 设置ASR - 智能选择最合适的ASR方案
    */
   private setupASR(): void {
     console.log('🗣️ Setting up ASR...');
@@ -192,8 +193,51 @@ export class SimpleMediaCapture {
     // 诊断ASR支持情况
     logASRDiagnostics();
     
-    console.log('🗣️ Using Web Speech API ASR');
-    this.asr = new WebSpeechASR(this.eventBus);
+    // ASR方案选择优先级:
+    // 1. 优先尝试WebSpeech API (如果支持且在安全上下文中)
+    // 2. 回退到阿里云WebSocket ASR (需要token配置)
+    // 3. 最后使用DashScope API (需要API key配置)
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const hasWebSpeech = !!SpeechRecognition && window.isSecureContext;
+    
+    // 检查环境变量中的阿里云配置
+    const alibabaToken = import.meta.env?.VITE_ALIBABA_ASR_TOKEN;
+    const alibabaAppkey = import.meta.env?.VITE_ALIBABA_ASR_APPKEY;
+    const alibabaApiKey = import.meta.env?.VITE_ALIBABA_API_KEY;
+    
+    if (hasWebSpeech) {
+      console.log('✅ Using WebSpeech API (preferred option)');
+      this.asr = new WebSpeechASR(this.eventBus);
+    } else if (alibabaToken && alibabaAppkey) {
+      console.log('🔄 WebSpeech not available, using Alibaba WebSocket ASR');
+      this.asr = new AlibabaWebSocketASR(this.eventBus, {
+        token: alibabaToken,
+        appkey: alibabaAppkey,
+        sample_rate: 16000,
+        enable_intermediate_result: true,
+        enable_punctuation_prediction: true,
+        enable_inverse_text_normalization: true,
+        enable_words: true
+      });
+    } else if (alibabaApiKey) {
+      console.log('🔄 Using Alibaba DashScope ASR (fallback)');
+      this.asr = new AlibabaASR(this.eventBus, {
+        apiKey: alibabaApiKey,
+        model: 'paraformer-realtime-v2',
+        sampleRate: 16000,
+        format: 'pcm',
+        enableWordsInfo: true
+      });
+    } else {
+      console.warn('⚠️ No ASR service available. Please configure one of the following:');
+      console.warn('1. Use HTTPS/localhost for WebSpeech API (recommended)');
+      console.warn('2. Set VITE_ALIBABA_ASR_TOKEN and VITE_ALIBABA_ASR_APPKEY for Alibaba WebSocket ASR');
+      console.warn('3. Set VITE_ALIBABA_API_KEY for Alibaba DashScope ASR');
+      
+      // 创建一个假的ASR来显示错误信息
+      this.asr = new WebSpeechASR(this.eventBus);
+    }
   }
 
   /**
@@ -244,20 +288,58 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 启动定期人脸检测 - 每秒检测一次
+   * 启动定期人脸检测 - 每500ms检测一次，但只在显著变化时更新UI
    */
   private startRegularFaceDetection(): void {
     if (this.faceDetectionTimer) {
       clearInterval(this.faceDetectionTimer);
     }
     
-    // 每秒检测一次（1000ms间隔）
+    // 每500ms检测一次，提高响应速度但不自动更新UI
     this.faceDetectionTimer = window.setInterval(() => {
       this.performFaceDetection();
-    }, 1000);
+    }, 500);
     
-    // 立即执行一次检测
-    this.performFaceDetection();
+    // 立即执行一次检测（初始状态），强制显示初始状态
+    this.performInitialFaceDetection();
+  }
+  
+  /**
+   * 执行初始人脸检测 - 强制显示初始状态
+   */
+  private performInitialFaceDetection(): void {
+    if (!this.isCapturing || !this.videoElement || !this.canvas || !this.canvasContext || !this.faceLandmarker) {
+      return;
+    }
+
+    try {
+      // 绘制视频帧到canvas
+      this.canvasContext.drawImage(this.videoElement, 0, 0, this.canvas.width, this.canvas.height);
+      
+      // 进行人脸检测
+      const results = this.faceLandmarker.detectForVideo(this.videoElement, performance.now());
+      
+      if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
+        this.processFaceResults(results, true); // 强制更新初始状态
+      } else {
+        // 没有检测到人脸时，强制显示无人脸状态
+        const now = performance.now();
+        const faceEvent: FaceEvent = {
+          type: 'face',
+          t: now,
+          timestamp: now,
+          deltaScore: 0,
+          expression: {},
+          pose: { yaw: 0, pitch: 0, roll: 0 },
+          confidence: 0
+        };
+        
+        this.eventBus.emit('face', faceEvent);
+        console.log('👤 Initial state: No face detected');
+      }
+    } catch (error) {
+      console.error('❌ Error in initial face detection:', error);
+    }
   }
   
   /**
@@ -276,10 +358,10 @@ export class SimpleMediaCapture {
       const results = this.faceLandmarker.detectForVideo(this.videoElement, performance.now());
       
       if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
-        this.processFaceResults(results, true); // 强制更新UI状态
+        this.processFaceResults(results, false); // 不强制更新，由事件驱动决定
       } else {
-        // 没有检测到人脸时也更新UI
-        this.updateFaceMetricsForNoFace();
+        // 没有检测到人脸时，检查是否需要更新UI
+        this.checkNoFaceUpdate();
       }
     } catch (error) {
       console.error('❌ Error in face detection:', error);
@@ -308,23 +390,25 @@ export class SimpleMediaCapture {
     
     const now = performance.now();
     
-    // 总是更新UI状态（每秒更新），但只在显著变化时触发事件
-    if (forceUpdate || now - this.lastRegularFaceUpdate > 800) { // 至少800ms更新一次UI
+    // 只有在强制更新或初次检测时才立即更新UI
+    if (forceUpdate || this.lastFaceEventTime === 0) {
       this.sendFaceUpdate(blendshapes, normalizedVector, changeScore, false);
       this.lastRegularFaceUpdate = now;
     }
     
-    // 检查是否需要触发显著变化事件
+    // 检查是否需要触发显著变化事件 - 这里会决定是否更新UI
     this.checkFaceEventTrigger(blendshapes, normalizedVector, changeScore);
   }
   
   /**
-   * 处理无人脸情况
+   * 检查无人脸状态更新
    */
-  private updateFaceMetricsForNoFace(): void {
-    const now = performance.now();
-    if (now - this.lastRegularFaceUpdate > 800) {
-      // 发送无人脸状态更新
+  private checkNoFaceUpdate(): void {
+    // 只有当上一次还有人脸，现在没人脸时才更新UI
+    if (this.lastFaceVector !== null) {
+      const now = performance.now();
+      
+      // 发送无人脸状态更新（清空状态）
       const faceEvent: FaceEvent = {
         type: 'face',
         t: now,
@@ -336,7 +420,10 @@ export class SimpleMediaCapture {
       };
       
       this.eventBus.emit('face', faceEvent);
-      this.lastRegularFaceUpdate = now;
+      this.lastFaceVector = null; // 标记为无人脸状态
+      this.faceChangeScore = 0;
+      
+      console.log('👤 Face disappeared - UI updated');
     }
   }
 
@@ -381,13 +468,16 @@ export class SimpleMediaCapture {
       return;
     }
     
-    // 降低阈值，使其更容易触发（从默认的0.6降低到0.15）
-    const lowerThreshold = 0.15;
+    // 使用配置的阈值，确保只有真正显著的变化才触发
+    const threshold = this.config.detection!.thresholds.high; // 0.6
     
-    if (changeScore > lowerThreshold) {
-      // 发送显著变化事件
+    if (changeScore > threshold) {
+      // 发送显著变化事件并更新UI
       this.sendFaceUpdate(blendshapes, normalizedVector, changeScore, true);
       this.lastFaceEventTime = now;
+      this.lastRegularFaceUpdate = now; // 同时更新常规更新时间
+      
+      console.log(`👤 Significant face change detected: ${changeScore.toFixed(3)} > ${threshold}`);
     }
   }
 
