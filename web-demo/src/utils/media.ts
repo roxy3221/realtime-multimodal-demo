@@ -149,14 +149,15 @@ export function pcmToFloat32Array(
   let samples: Float32Array;
   
   switch (bitDepth) {
-    case 16:
+    case 16: {
       const int16Array = new Int16Array(pcmData);
       samples = new Float32Array(int16Array.length);
       for (let i = 0; i < int16Array.length; i++) {
         samples[i] = int16Array[i] / 32768.0; // 归一化到 [-1, 1]
       }
       break;
-    case 24:
+    }
+    case 24: {
       // 24-bit处理稍复杂，简化实现
       const uint8Array = new Uint8Array(pcmData);
       samples = new Float32Array(uint8Array.length / 3);
@@ -165,9 +166,11 @@ export function pcmToFloat32Array(
         samples[j] = (sample > 0x7FFFFF ? sample - 0x1000000 : sample) / 8388608.0;
       }
       break;
-    case 32:
+    }
+    case 32: {
       samples = new Float32Array(pcmData);
       break;
+    }
     default:
       throw new Error(`Unsupported bit depth: ${bitDepth}`);
   }

@@ -3,6 +3,8 @@
  * 映射自Python MultiModalAnalyzer的组件接口
  */
 
+import type { MultiModalEvent } from './events.js';
+
 // 音频特征（对应ProsodyAnalyzer输出）
 export interface AudioFeatures {
   pitch: number[];  // F0序列
@@ -63,7 +65,7 @@ export interface CacheEntry<T> {
 export interface EventDrivenCacheData {
   audio: Map<number, AudioFeatures>;
   face: Map<number, FaceFeatures>;
-  events: Map<number, any>; // 事件缓存
+  events: Map<number, MultiModalEvent>; // 事件缓存
 }
 
 // 预计算结果（对应Python的precompute阶段）
@@ -72,7 +74,7 @@ export interface PrecomputedData {
     duration_ms: number;
     sample_rate: number;
     vad_result?: VADResult;
-    features?: any; // 预计算的音频特征
+    features?: Record<string, unknown>; // 预计算的音频特征
   };
   video: {
     duration_ms: number;
@@ -103,7 +105,7 @@ export interface AnalyzerConfig {
 }
 
 // Worker消息类型
-export interface WorkerMessage<T = any> {
+export interface WorkerMessage<T = unknown> {
   type: 'init' | 'process' | 'result' | 'error' | 'config';
   id: string;
   data: T;

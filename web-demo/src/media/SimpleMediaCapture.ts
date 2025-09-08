@@ -8,6 +8,21 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import type { FaceEvent, ProsodyEvent, MediaConfig } from '../types';
 import { EventBus } from '../events/EventBus';
 import { DEFAULT_MEDIA_CONFIG } from '../config/defaults';
+
+// MediaPipe类型定义
+interface BlendshapeCategory {
+  categoryName: string;
+  score: number;
+}
+
+interface Blendshapes {
+  categories: BlendshapeCategory[];
+}
+
+interface FaceDetectionResults {
+  faceBlendshapes: Blendshapes[];
+  faceLandmarks?: unknown[];
+}
 import { WebSpeechASR } from '../asr/WebSpeechASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 
@@ -240,12 +255,12 @@ export class SimpleMediaCapture {
   /**
    * 处理人脸检测结果
    */
-  private processFaceResults(results: any): void {
+  private processFaceResults(results: FaceDetectionResults): void {
     const blendshapes = results.faceBlendshapes[0];
     // const landmarks = results.faceLandmarks[0];
     
     // 提取表情特征向量
-    const expressionVector = blendshapes.categories.map((category: any) => category.score);
+    const expressionVector = blendshapes.categories.map((category: BlendshapeCategory) => category.score);
     const normalizedVector = normalizeVector(expressionVector);
     
     // 计算变化分数
@@ -265,7 +280,7 @@ export class SimpleMediaCapture {
   /**
    * 检查人脸事件触发
    */
-  private checkFaceEventTrigger(blendshapes: any, normalizedVector: number[], changeScore: number): void {
+  private checkFaceEventTrigger(blendshapes: Blendshapes, _normalizedVector: number[], changeScore: number): void {
     const now = performance.now();
     const cooldownTime = this.config.detection!.cooldownMs;
     
@@ -277,7 +292,7 @@ export class SimpleMediaCapture {
     // 阈值检查
     if (changeScore > this.config.detection!.thresholds.high) {
       // 计算头部姿态
-      const headPose = this.calculateHeadPose(normalizedVector);
+      const headPose = this.calculateHeadPose();
       
       // 提取主要表情
       const mainExpression = this.extractMainExpression(blendshapes);
@@ -302,7 +317,7 @@ export class SimpleMediaCapture {
   /**
    * 计算头部姿态（简化版）
    */
-  private calculateHeadPose(_normalizedVector: number[]): { yaw: number; pitch: number; roll: number } {
+  private calculateHeadPose(): { yaw: number; pitch: number; roll: number } {
     // 简化的头部姿态计算
     // 实际项目中可以使用更精确的3D姿态估算
     return {
@@ -315,11 +330,11 @@ export class SimpleMediaCapture {
   /**
    * 提取主要表情
    */
-  private extractMainExpression(blendshapes: any): Record<string, number> {
+  private extractMainExpression(blendshapes: Blendshapes): Record<string, number> {
     const expressionMap: Record<string, number> = {};
     
     // 提取关键表情分数
-    blendshapes.categories.forEach((category: any) => {
+    blendshapes.categories.forEach((category: BlendshapeCategory) => {
       const name = category.categoryName;
       if (name.includes('smile') || name.includes('frown') || 
           name.includes('eyeBlink') || name.includes('jawOpen')) {
@@ -333,7 +348,7 @@ export class SimpleMediaCapture {
   /**
    * 处理韵律事件
    */
-  private handleProsodyEvent(data: any): void {
+  private handleProsodyEvent(data: ProsodyEvent): void {
     const now = performance.now();
     const cooldownTime = this.config.detection!.cooldownMs;
     

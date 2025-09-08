@@ -35,6 +35,11 @@ export interface ProsodyEvent extends BaseEvent {
   wpm: number;        // 语速 (words per minute)
   confidence: number; // 置信度
   vad?: boolean;      // VAD检测结果
+  // WebRTC增强字段
+  f0Stability?: number; // F0稳定性
+  vadActive?: boolean;  // VAD活跃状态
+  zeroCrossingRate?: number; // 过零率
+  spectralCentroid?: number; // 谱重心
 }
 
 // ASR增量事件

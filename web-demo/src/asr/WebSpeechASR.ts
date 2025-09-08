@@ -7,7 +7,7 @@ import type { ASREvent } from '../types';
 import type { EventBus } from '../events/EventBus';
 
 export class WebSpeechASR {
-  private recognition: any = null;
+  private recognition: SpeechRecognition | null = null;
   private eventBus: EventBus;
   private isActive = false;
   private currentTranscript = '';
@@ -27,7 +27,7 @@ export class WebSpeechASR {
    */
   private setupRecognition(): void {
     // 检查浏览器支持
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
       console.error('❌ Speech Recognition not supported in this browser');
@@ -40,12 +40,12 @@ export class WebSpeechASR {
     this.recognition.lang = 'zh-CN'; // 默认中文，可配置
 
     // 处理识别结果
-    this.recognition.onresult = (event: any) => {
+    this.recognition.onresult = (event: SpeechRecognitionEvent) => {
       this.handleRecognitionResult(event);
     };
 
     // 错误处理
-    this.recognition.onerror = (event: any) => {
+    this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.error('❌ Speech recognition error:', event.error);
       if (event.error === 'no-speech' || event.error === 'aborted') {
         // 正常情况，重新启动
@@ -65,7 +65,7 @@ export class WebSpeechASR {
   /**
    * 处理识别结果
    */
-  private handleRecognitionResult(event: any): void {
+  private handleRecognitionResult(event: SpeechRecognitionEvent): void {
     let finalTranscript = '';
     let interimTranscript = '';
 
@@ -198,7 +198,7 @@ export class WebSpeechASR {
     // 先停止当前识别
     try {
       this.recognition.stop();
-    } catch (error) {
+    } catch {
       // 忽略停止时的错误
     }
     

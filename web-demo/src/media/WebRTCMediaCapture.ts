@@ -136,7 +136,7 @@ export class WebRTCMediaCapture {
           googNoiseSuppression: true,   // Google噪声抑制
           googHighpassFilter: true,     // 高通滤波
           googTypingNoiseDetection: true // 键盘噪音检测
-        } as any // 允许Google特定约束
+        } as Record<string, unknown> // 允许Google特定约束
       };
 
       this.localStream = await navigator.mediaDevices.getUserMedia(enhancedConstraints);
@@ -459,23 +459,28 @@ export class WebRTCMediaCapture {
   /**
    * 创建详细错误信息
    */
-  private createDetailedError(error: any): Error {
-    if (error.name === 'NotAllowedError') {
+  private createDetailedError(error: unknown): Error {
+    // Type guard for error-like objects
+    const errorObj = error as { name?: string; message?: string };
+    
+    if (errorObj.name === 'NotAllowedError') {
       return new Error('摄像头/麦克风权限被拒绝。请允许访问并刷新页面。');
-    } else if (error.name === 'NotFoundError') {
+    } else if (errorObj.name === 'NotFoundError') {
       return new Error('未找到摄像头或麦克风设备。');
-    } else if (error.name === 'NotReadableError') {
+    } else if (errorObj.name === 'NotReadableError') {
       return new Error('设备被其他应用程序占用。');
-    } else if (error.message?.includes('MediaDevices API not available') || 
-               error.message?.includes('mediaDevices not available') ||
-               error.message?.includes('requires HTTPS')) {
+    } else if (errorObj.message?.includes('MediaDevices API not available') || 
+               errorObj.message?.includes('mediaDevices not available') ||
+               errorObj.message?.includes('requires HTTPS')) {
       return new Error('需要 HTTPS 连接才能访问摄像头和麦克风。请使用 "npm run https-dev" 启动 HTTPS 开发服务器，或访问 https://localhost:5174');
-    } else if (error.message?.includes('Navigator not available')) {
+    } else if (errorObj.message?.includes('Navigator not available')) {
       return new Error('浏览器环境不可用。请确保在现代浏览器中运行此应用程序。');
-    } else if (error.message?.includes('enumerateDevices') || error.message?.includes('undefined')) {
+    } else if (errorObj.message?.includes('enumerateDevices') || errorObj.message?.includes('undefined')) {
       return new Error('无法检测媒体设备。请确保使用 HTTPS 连接，或在 localhost 环境下运行。建议使用 "npm run https-dev"。');
     }
-    return error;
+    
+    // If it's already an Error, return it; otherwise create a new Error
+    return error instanceof Error ? error : new Error(String(error));
   }
 
   /**

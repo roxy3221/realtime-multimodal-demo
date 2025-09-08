@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { checkBrowserSupport } from './utils';
 import { globalEventBus } from './events/EventBus';
 import { SimpleMediaCapture } from './media/SimpleMediaCapture';
-import type { MultiModalEvent } from './types';
+import type { MultiModalEvent, ProsodyEvent } from './types';
 import './App.css';
 
 function App() {
@@ -88,24 +88,24 @@ function App() {
         
         if (event.type === 'prosody') {
           // WebRTC优化的prosody事件处理
-          const enhancedEvent = event as any; // 包含WebRTC增强字段
+          const prosodyEvent = event as ProsodyEvent;
           
           setSpeechMetrics({
             frequency: {
-              value: Math.round(enhancedEvent.f0 || 0), // 格式化为整数Hz
-              change: enhancedEvent.f0Stability ? Math.round((1 - enhancedEvent.f0Stability) * 100) : 0
+              value: Math.round(prosodyEvent.f0 || 0), // 格式化为整数Hz
+              change: prosodyEvent.f0Stability ? Math.round((1 - prosodyEvent.f0Stability) * 100) : 0
             },
             energy: {
-              value: Number((enhancedEvent.rms || 0).toFixed(3)), // 3位小数
-              activity: enhancedEvent.vadActive ? '说话中' : '静默'
+              value: Number((prosodyEvent.rms || 0).toFixed(3)), // 3位小数
+              activity: prosodyEvent.vadActive ? '说话中' : '静默'
             },
             wpm: {
-              value: enhancedEvent.wpm || 0,
-              zeroCrossing: Number((enhancedEvent.zeroCrossingRate || 0).toFixed(2))
+              value: prosodyEvent.wpm || 0,
+              zeroCrossing: Number((prosodyEvent.zeroCrossingRate || 0).toFixed(2))
             },
             quality: {
-              state: (enhancedEvent.f0Confidence > 0.5) ? '正常' : '不稳定',
-              spectralCentroid: Math.round(enhancedEvent.spectralCentroid || 0)
+              state: (prosodyEvent.f0Stability && prosodyEvent.f0Stability > 0.5) ? '正常' : '不稳定',
+              spectralCentroid: Math.round(prosodyEvent.spectralCentroid || 0)
             }
           });
         }

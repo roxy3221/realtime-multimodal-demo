@@ -6,6 +6,20 @@
 import type { ASREvent } from '../types';
 import type { EventBus } from '../events/EventBus';
 
+// Alibaba ASR API类型定义
+interface AlibabaWord {
+  text: string;
+  begin_time?: number;
+  end_time?: number;
+}
+
+interface AlibabaSentence {
+  text?: string;
+  words?: AlibabaWord[];
+  is_final?: boolean;
+  end_time?: number;
+}
+
 interface AlibabaASRConfig {
   apiKey: string;
   model: string;
@@ -20,12 +34,12 @@ interface ASRMessage {
     streaming: string;
     task_id?: string;
     event?: string;
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
   };
   payload: {
     model: string;
     task: string;
-    function_call?: any;
+    function_call?: Record<string, unknown>;
     input?: {
       audio?: string;
       sample_rate?: number;
@@ -43,7 +57,7 @@ interface ASRResponse {
     task_id: string;
     event: string;
     streaming: string;
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
   };
   payload: {
     output: {
@@ -290,7 +304,7 @@ export class AlibabaASR {
   /**
    * 处理识别结果
    */
-  private handleRecognitionResult(sentence: any): void {
+  private handleRecognitionResult(sentence: AlibabaSentence): void {
     const text = sentence.text?.trim();
     if (!text) return;
 
@@ -316,7 +330,7 @@ export class AlibabaASR {
         textDelta,
         isFinal,
         currentWPM: this.getCurrentWPM(),
-        words: sentence.words?.map((word: any) => ({
+        words: sentence.words?.map((word: AlibabaWord) => ({
           w: word.text,
           s: word.begin_time || 0,
           e: word.end_time || 0
@@ -332,13 +346,13 @@ export class AlibabaASR {
   /**
    * 处理词级别信息
    */
-  private processWordsInfo(words: Array<{text: string, begin_time: number, end_time: number}>): void {
+  private processWordsInfo(words: AlibabaWord[]): void {
     const now = Date.now();
     
     words.forEach(wordInfo => {
       this.wordHistory.push({ 
         word: wordInfo.text, 
-        time: now - (Date.now() - wordInfo.end_time) // 根据词的结束时间调整
+        time: wordInfo.end_time ? now - (Date.now() - wordInfo.end_time) : now // 根据词的结束时间调整
       });
     });
     

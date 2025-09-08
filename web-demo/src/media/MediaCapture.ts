@@ -41,7 +41,7 @@ export class MediaCapture {
       await this.setupAudioPipeline(finalConfig);
       
       // 3. 初始化视频处理管道
-      await this.setupVideoPipeline(finalConfig);
+      await this.setupVideoPipeline();
       
       // 4. 初始化ASR
       this.setupASR();
@@ -356,7 +356,7 @@ export class MediaCapture {
   /**
    * 设置视频处理管道
    */
-  private async setupVideoPipeline(_config: MediaConfig): Promise<void> {
+  private async setupVideoPipeline(): Promise<void> {
     if (!this.videoElement) throw new Error('Video element not initialized');
 
     // 创建传统Worker而不是模块Worker
