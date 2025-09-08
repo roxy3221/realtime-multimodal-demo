@@ -40,6 +40,8 @@ function App() {
   // ASR状态
   const [transcriptText, setTranscriptText] = useState('');
   const [currentWPM, setCurrentWPM] = useState(0);
+  const [asrStatus, setAsrStatus] = useState<'idle' | 'starting' | 'active' | 'error'>('idle');
+  const [asrError, setAsrError] = useState<string>('');
   
   const mediaCaptureRef = useRef<SimpleMediaCapture | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
@@ -112,8 +114,28 @@ function App() {
         }
 
         if (event.type === 'asr') {
-          // 更新转录文本
-          setTranscriptText(prev => prev + event.textDelta + ' ');
+          console.log('🗣️ ASR event:', event);
+          
+          // 检查是否是状态消息
+          if (event.textDelta.startsWith('[') && event.textDelta.endsWith(']')) {
+            // 这是状态消息
+            if (event.textDelta.includes('已启动')) {
+              setAsrStatus('active');
+              setAsrError('');
+            } else if (event.textDelta.includes('不可用') || event.textDelta.includes('失败') || 
+                       event.textDelta.includes('被拒绝') || event.textDelta.includes('错误')) {
+              setAsrStatus('error');
+              setAsrError(event.textDelta.replace(/[\[\]]/g, ''));
+            } else {
+              setAsrStatus('starting');
+            }
+            // 不添加状态消息到转录文本
+          } else {
+            // 这是正常的转录文本
+            setTranscriptText(prev => prev + event.textDelta + ' ');
+            setAsrStatus('active');
+            setAsrError('');
+          }
           
           // 更新语速
           if (event.currentWPM !== undefined) {
@@ -254,6 +276,8 @@ function App() {
     setEvents([]);
     setTranscriptText('');
     setCurrentWPM(0);
+    setAsrStatus('idle');
+    setAsrError('');
   };
 
   const toggleFeature = (feature: keyof typeof features) => {
@@ -360,8 +384,11 @@ function App() {
           <div className="speech-analysis-panel">
             <div className="panel-title">语音识别与韵律分析</div>
             
-            <div className={`speech-input-status ${speechMetrics.energy.activity === '说话中' ? 'listening' : ''}`}>
-              {speechMetrics.energy.activity === '说话中' ? '正在识别语音...' : '等待语音输入...'}
+            <div className={`speech-input-status ${speechMetrics.energy.activity === '说话中' ? 'listening' : ''} ${asrStatus === 'error' ? 'error' : ''}`}>
+              {asrStatus === 'idle' && '语音识别未启动'}
+              {asrStatus === 'starting' && '正在启动语音识别...'}
+              {asrStatus === 'active' && (speechMetrics.energy.activity === '说话中' ? '正在识别语音...' : '等待语音输入...')}
+              {asrStatus === 'error' && `错误: ${asrError}`}
             </div>
             
             <div className="speech-metrics">
@@ -387,10 +414,26 @@ function App() {
             <div className="transcript-display">
               <div className="transcript-title">实时语音转录</div>
               <div className="transcript-content">
-                {transcriptText || '等待语音输入...'}
+                {asrStatus === 'error' ? (
+                  <span style={{ color: '#e74c3c' }}>❌ {asrError}</span>
+                ) : asrStatus === 'idle' ? (
+                  <span style={{ color: '#7f8c8d' }}>点击"开始分析"启动语音识别</span>
+                ) : asrStatus === 'starting' ? (
+                  <span style={{ color: '#f39c12' }}>⏳ 正在启动语音识别...</span>
+                ) : transcriptText ? (
+                  transcriptText
+                ) : (
+                  <span style={{ color: '#7f8c8d' }}>等待语音输入...</span>
+                )}
               </div>
               <div className="transcript-stats">
                 当前语速: {currentWPM} WPM
+                {asrStatus === 'active' && (
+                  <span style={{ color: '#27ae60', marginLeft: '10px' }}>● 活跃</span>
+                )}
+                {asrStatus === 'error' && (
+                  <span style={{ color: '#e74c3c', marginLeft: '10px' }}>● 错误</span>
+                )}
               </div>
             </div>
             

@@ -26,6 +26,7 @@ interface FaceDetectionResults {
 import { WebSpeechASR } from '../asr/WebSpeechASR';
 import { AlibabaASR } from '../asr/AlibabaASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
+import { logASRDiagnostics } from '../utils/asrUtils';
 
 export class SimpleMediaCapture {
   private stream: MediaStream | null = null;
@@ -186,6 +187,11 @@ export class SimpleMediaCapture {
    * 设置ASR - 使用阿里云实时ASR
    */
   private setupASR(): void {
+    console.log('🗣️ Setting up ASR...');
+    
+    // 诊断ASR支持情况
+    logASRDiagnostics();
+    
     console.log('🗣️ Using Web Speech API ASR');
     this.asr = new WebSpeechASR(this.eventBus);
   }
@@ -223,7 +229,15 @@ export class SimpleMediaCapture {
     
     // 启动ASR
     if (this.asr) {
-      this.asr.start();
+      console.log('🎤 Starting ASR...');
+      const asrStarted = await this.asr.start();
+      if (asrStarted) {
+        console.log('✅ ASR started successfully');
+      } else {
+        console.error('❌ Failed to start ASR');
+      }
+    } else {
+      console.warn('⚠️ No ASR instance available');
     }
     
     console.log('🎬 Capture started');

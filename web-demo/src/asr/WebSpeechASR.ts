@@ -245,6 +245,14 @@ export class WebSpeechASR {
   async start(): Promise<boolean> {
     if (!this.recognition) {
       console.error('❌ Speech Recognition not available');
+      // 发送错误状态到UI
+      this.eventBus.publish({
+        type: 'asr',
+        t: Date.now(),
+        textDelta: '[语音识别不可用]',
+        isFinal: true,
+        currentWPM: 0
+      } as any);
       return false;
     }
 
@@ -254,34 +262,64 @@ export class WebSpeechASR {
     }
 
     try {
+      console.log('🎤 Starting ASR - checking permissions...');
+      
       // 首先检查麦克风权限
       const permissionStatus = await this.checkMicrophonePermission();
       if (!permissionStatus) {
         console.error('❌ Microphone permission denied');
+        this.eventBus.publish({
+          type: 'asr',
+          t: Date.now(),
+          textDelta: '[麦克风权限被拒绝]',
+          isFinal: true,
+          currentWPM: 0
+        } as any);
         return false;
       }
 
+      console.log('✅ Microphone permission OK - starting recognition...');
       this.recognition.start();
       this.isActive = true;
       this.currentTranscript = '';
       this.lastTranscriptLength = 0;
       this.wordHistory = [];
       
-      console.log('🎤 Speech recognition starting...');
+      // 发送启动状态
+      this.eventBus.publish({
+        type: 'asr',
+        t: Date.now(),
+        textDelta: '[语音识别已启动，等待语音输入...]',
+        isFinal: false,
+        currentWPM: 0
+      } as any);
+      
+      console.log('🎤 Speech recognition started successfully');
       return true;
     } catch (error) {
       console.error('❌ Failed to start speech recognition:', error);
       
       // 根据错误类型提供不同的提示
+      let errorMessage = '[语音识别启动失败]';
       if (error instanceof Error) {
         if (error.message.includes('already started')) {
           console.warn('⚠️ Speech recognition already started elsewhere');
-          return false;
+          errorMessage = '[语音识别已在其他地方启动]';
         } else if (error.message.includes('not-allowed')) {
           console.error('🚫 Microphone access denied');
-          return false;
+          errorMessage = '[麦克风访问被拒绝]';
+        } else {
+          errorMessage = `[启动错误: ${error.message}]`;
         }
       }
+      
+      this.eventBus.publish({
+        type: 'asr',
+        t: Date.now(),
+        textDelta: errorMessage,
+        isFinal: true,
+        currentWPM: 0
+      } as any);
       
       return false;
     }
