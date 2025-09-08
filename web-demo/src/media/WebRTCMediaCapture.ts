@@ -91,9 +91,17 @@ export class WebRTCMediaCapture {
    */
   private async setupEnhancedMediaStream(config: MediaConfig): Promise<void> {
     try {
-      // 检查 navigator.mediaDevices 是否可用
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('MediaDevices API not available. Please use HTTPS or localhost.');
+      // 更强壮的 MediaDevices API 检查
+      if (typeof navigator === 'undefined') {
+        throw new Error('Navigator not available. Are you running in a browser environment?');
+      }
+      
+      if (!navigator.mediaDevices) {
+        throw new Error('MediaDevices API not available. This application requires HTTPS or localhost.');
+      }
+      
+      if (!navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia not supported. Please use a modern browser.');
       }
 
       // 先检查可用设备（添加错误处理）
@@ -456,8 +464,14 @@ export class WebRTCMediaCapture {
       return new Error('未找到摄像头或麦克风设备。');
     } else if (error.name === 'NotReadableError') {
       return new Error('设备被其他应用程序占用。');
-    } else if (error.message?.includes('MediaDevices API not available')) {
-      return new Error('需要 HTTPS 连接才能访问摄像头和麦克风。请使用 https://localhost 或部署到 HTTPS 服务器。');
+    } else if (error.message?.includes('MediaDevices API not available') || 
+               error.message?.includes('mediaDevices not available') ||
+               error.message?.includes('requires HTTPS')) {
+      return new Error('需要 HTTPS 连接才能访问摄像头和麦克风。请使用 "npm run https-dev" 启动 HTTPS 开发服务器，或访问 https://localhost:5174');
+    } else if (error.message?.includes('Navigator not available')) {
+      return new Error('浏览器环境不可用。请确保在现代浏览器中运行此应用程序。');
+    } else if (error.message?.includes('enumerateDevices') || error.message?.includes('undefined')) {
+      return new Error('无法检测媒体设备。请确保使用 HTTPS 连接，或在 localhost 环境下运行。建议使用 "npm run https-dev"。');
     }
     return error;
   }
@@ -492,8 +506,17 @@ export class WebRTCMediaCapture {
 class RTCDeviceManager {
   async enumerateDevices() {
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-        throw new Error('mediaDevices.enumerateDevices not supported');
+      // 更强壮的检查顺序
+      if (typeof navigator === 'undefined') {
+        throw new Error('Navigator not available in this environment');
+      }
+      
+      if (!navigator.mediaDevices) {
+        throw new Error('mediaDevices not available - requires HTTPS or localhost');
+      }
+      
+      if (typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+        throw new Error('enumerateDevices method not supported in this browser');
       }
       
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -503,7 +526,7 @@ class RTCDeviceManager {
         audioOutputs: devices.filter(d => d.kind === 'audiooutput')
       };
     } catch (error) {
-      console.error('Device enumeration failed:', error);
+      console.error('❌ Device enumeration failed:', error);
       // 返回空设备列表，让应用继续运行
       return {
         videoInputs: [],

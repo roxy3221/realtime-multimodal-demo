@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { checkBrowserSupport } from './utils';
 import { globalEventBus } from './events/EventBus';
-import { WebRTCMediaCapture } from './media/WebRTCMediaCapture';
+import { SimpleMediaCapture } from './media/SimpleMediaCapture';
 import type { MultiModalEvent } from './types';
 import './App.css';
 
@@ -42,7 +42,7 @@ function App() {
   const [transcriptText, setTranscriptText] = useState('');
   const [currentWPM, setCurrentWPM] = useState(0);
   
-  const mediaCaptureRef = useRef<WebRTCMediaCapture | null>(null);
+  const mediaCaptureRef = useRef<SimpleMediaCapture | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -57,8 +57,8 @@ function App() {
     }
 
     if (criticalSupported) {
-      // 初始化WebRTCMediaCapture
-      mediaCaptureRef.current = new WebRTCMediaCapture(globalEventBus);
+      // 初始化SimpleMediaCapture
+      mediaCaptureRef.current = new SimpleMediaCapture(globalEventBus);
       
       // 订阅所有事件用于调试和UI更新
       const unsubscribe = globalEventBus.subscribe('all', (event) => {
