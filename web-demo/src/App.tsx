@@ -43,6 +43,7 @@ function App() {
   
   const mediaCaptureRef = useRef<SimpleMediaCapture | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     // 检查浏览器支持
@@ -199,7 +200,10 @@ function App() {
       }
       
       // 开始采集
-      await mediaCaptureRef.current.startCapture(videoPreviewRef.current || undefined);
+      await mediaCaptureRef.current.startCapture(
+        videoPreviewRef.current || undefined, 
+        canvasRef.current || undefined
+      );
       
       // 更新状态
       setIsCapturing(true);
@@ -316,6 +320,12 @@ function App() {
                     }
                   }
                 }}
+              />
+              <canvas 
+                ref={canvasRef}
+                style={{ display: 'none' }}
+                width={640}
+                height={480}
               />
               <div className="video-overlay">
                 {!isCapturing && <div>点击开始预览</div>}

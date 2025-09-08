@@ -15,10 +15,14 @@ class AudioProcessor extends AudioWorkletProcessor {
     
     // 事件触发器状态
     this.lastProsodyEvent = 0;
-    this.cooldownMs = 1200; // 冷却时间
-    this.thresholdHigh = 0.6;
-    this.thresholdLow = 0.4;
+    this.cooldownMs = 3000; // 增加冷却时间到3秒
+    this.thresholdHigh = 0.75; // 提高触发阈值
+    this.thresholdLow = 0.35; // 调整退出阈值
     this.isEventActive = false;
+    
+    // 连续触发检查
+    this.consecutiveHighFrames = 0;
+    this.minConsecutiveFrames = 3; // 需要连续3帧才触发
     
     // 历史数据用于变化检测
     this.history = {
@@ -269,16 +273,27 @@ class AudioProcessor extends AudioWorkletProcessor {
     // 冷却检查
     if (now - this.lastProsodyEvent < this.cooldownMs) return;
     
-    // 双阈值触发器
+    // 连续帧检查
+    if (deltaScore > this.thresholdHigh) {
+      this.consecutiveHighFrames++;
+    } else {
+      this.consecutiveHighFrames = 0;
+    }
+    
+    // 双阈值触发器 + 连续帧要求
     let shouldTrigger = false;
     
-    if (!this.isEventActive && deltaScore > this.thresholdHigh) {
+    if (!this.isEventActive && 
+        deltaScore > this.thresholdHigh && 
+        this.consecutiveHighFrames >= this.minConsecutiveFrames) {
       // 进入事件状态
       shouldTrigger = true;
       this.isEventActive = true;
+      this.consecutiveHighFrames = 0; // 重置
     } else if (this.isEventActive && deltaScore < this.thresholdLow) {
       // 退出事件状态
       this.isEventActive = false;
+      this.consecutiveHighFrames = 0;
     }
     
     if (shouldTrigger) {
