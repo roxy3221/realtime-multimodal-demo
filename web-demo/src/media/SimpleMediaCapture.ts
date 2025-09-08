@@ -26,6 +26,7 @@ interface FaceDetectionResults {
 import { WebSpeechASR } from '../asr/WebSpeechASR';
 import { AlibabaASR } from '../asr/AlibabaASR';
 import { AlibabaWebSocketASR } from '../asr/AlibabaWebSocketASR';
+import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 import { logASRDiagnostics } from '../utils/asrUtils';
 
@@ -43,12 +44,11 @@ export class SimpleMediaCapture {
   private faceChangeScore = 0;
   private lastFaceEventTime = 0;
   private faceDetectionTimer: number | null = null;
-  private lastRegularFaceUpdate = 0;
   
   // 音频分析状态
   private lastProsodyEventTime = 0;
   
-  private asr: WebSpeechASR | AlibabaASR | AlibabaWebSocketASR | null = null;
+  private asr: WebSpeechASR | AlibabaASR | AlibabaWebSocketASR | GummyWebSocketASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -194,23 +194,37 @@ export class SimpleMediaCapture {
     logASRDiagnostics();
     
     // ASR方案选择优先级:
-    // 1. 优先尝试WebSpeech API (如果支持且在安全上下文中)
-    // 2. 回退到阿里云WebSocket ASR (需要token配置)
-    // 3. 最后使用DashScope API (需要API key配置)
+    // 1. 优先尝试Gummy WebSocket ASR (如果配置了DashScope API key)
+    // 2. 回退到WebSpeech API (如果支持且在安全上下文中)
+    // 3. 使用阿里云WebSocket ASR (需要token配置)
+    // 4. 最后使用DashScope API (需要API key配置)
     
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const hasWebSpeech = !!SpeechRecognition && window.isSecureContext;
     
     // 检查环境变量中的阿里云配置
+    const gummyApiKey = import.meta.env?.VITE_DASHSCOPE_API_KEY;
     const alibabaToken = import.meta.env?.VITE_ALIBABA_ASR_TOKEN;
     const alibabaAppkey = import.meta.env?.VITE_ALIBABA_ASR_APPKEY;
     const alibabaApiKey = import.meta.env?.VITE_ALIBABA_API_KEY;
     
-    if (hasWebSpeech) {
-      console.log('✅ Using WebSpeech API (preferred option)');
+    if (gummyApiKey) {
+      console.log('🎯 Using Gummy WebSocket ASR (preferred option)');
+      this.asr = new GummyWebSocketASR(this.eventBus, {
+        apiKey: gummyApiKey,
+        model: 'gummy-realtime-v1',
+        sampleRate: 16000,
+        format: 'pcm',
+        sourceLanguage: 'auto',
+        transcriptionEnabled: true,
+        translationEnabled: false,
+        maxEndSilence: 800
+      });
+    } else if (hasWebSpeech) {
+      console.log('✅ Using WebSpeech API (fallback option)');
       this.asr = new WebSpeechASR(this.eventBus);
     } else if (alibabaToken && alibabaAppkey) {
-      console.log('🔄 WebSpeech not available, using Alibaba WebSocket ASR');
+      console.log('🔄 Using Alibaba WebSocket ASR (fallback)');
       this.asr = new AlibabaWebSocketASR(this.eventBus, {
         token: alibabaToken,
         appkey: alibabaAppkey,
@@ -231,9 +245,10 @@ export class SimpleMediaCapture {
       });
     } else {
       console.warn('⚠️ No ASR service available. Please configure one of the following:');
-      console.warn('1. Use HTTPS/localhost for WebSpeech API (recommended)');
-      console.warn('2. Set VITE_ALIBABA_ASR_TOKEN and VITE_ALIBABA_ASR_APPKEY for Alibaba WebSocket ASR');
-      console.warn('3. Set VITE_ALIBABA_API_KEY for Alibaba DashScope ASR');
+      console.warn('1. Set VITE_DASHSCOPE_API_KEY for Gummy ASR (recommended)');
+      console.warn('2. Use HTTPS/localhost for WebSpeech API');
+      console.warn('3. Set VITE_ALIBABA_ASR_TOKEN and VITE_ALIBABA_ASR_APPKEY for Alibaba WebSocket ASR');
+      console.warn('4. Set VITE_ALIBABA_API_KEY for Alibaba DashScope ASR');
       
       // 创建一个假的ASR来显示错误信息
       this.asr = new WebSpeechASR(this.eventBus);
@@ -388,12 +403,9 @@ export class SimpleMediaCapture {
     this.faceChangeScore = changeScore;
     this.lastFaceVector = normalizedVector;
     
-    const now = performance.now();
-    
     // 只有在强制更新或初次检测时才立即更新UI
     if (forceUpdate || this.lastFaceEventTime === 0) {
       this.sendFaceUpdate(blendshapes, normalizedVector, changeScore, false);
-      this.lastRegularFaceUpdate = now;
     }
     
     // 检查是否需要触发显著变化事件 - 这里会决定是否更新UI
@@ -475,7 +487,6 @@ export class SimpleMediaCapture {
       // 发送显著变化事件并更新UI
       this.sendFaceUpdate(blendshapes, normalizedVector, changeScore, true);
       this.lastFaceEventTime = now;
-      this.lastRegularFaceUpdate = now; // 同时更新常规更新时间
       
       console.log(`👤 Significant face change detected: ${changeScore.toFixed(3)} > ${threshold}`);
     }

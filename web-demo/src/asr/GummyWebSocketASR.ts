@@ -1,54 +1,75 @@
 /**
- * 阿里云WebSocket实时语音识别实现
- * 基于阿里云智能语音交互WebSocket协议
+ * 阿里云DashScope Gummy实时语音识别WebSocket实现
+ * 基于阿里云百炼平台的Gummy模型，支持实时语音识别和翻译
  */
 
 import type { ASREvent } from '../types';
 import type { EventBus } from '../events/EventBus';
 
-interface AlibabaASRConfig {
-  token: string;
-  appkey: string;
+interface GummyASRConfig {
+  apiKey: string;
+  model?: string;
+  sampleRate?: number;
   format?: string;
-  sample_rate?: number;
-  enable_intermediate_result?: boolean;
-  enable_punctuation_prediction?: boolean;
-  enable_inverse_text_normalization?: boolean;
-  enable_words?: boolean;
+  sourceLanguage?: string;
+  transcriptionEnabled?: boolean;
+  translationEnabled?: boolean;
+  translationTargetLanguages?: string[];
+  maxEndSilence?: number;
+  vocabularyId?: string;
 }
 
-interface Header {
-  message_id: string;
-  task_id: string;
-  namespace: string;
-  name: string;
-  appkey: string;
-  status?: number;
-  status_message?: string;
-}
-
-interface StartTranscriptionPayload {
-  format: string;
-  sample_rate: number;
-  enable_intermediate_result: boolean;
-  enable_punctuation_prediction: boolean;
-  enable_inverse_text_normalization: boolean;
-  enable_words: boolean;
-}
-
-interface WordInfo {
+interface TranscriptionResult {
+  sentence_id: number;
+  begin_time: number;
+  end_time: number;
   text: string;
-  startTime: number;
-  endTime: number;
+  words: Array<{
+    beginTime: number;
+    endTime: number;
+    text: string;
+  }>;
+  is_sentence_end: boolean;
 }
 
-export class AlibabaWebSocketASR {
+interface TranslationResult {
+  is_sentence_end: boolean;
+  translations: Record<string, {
+    sentence_id: number;
+    language: string;
+    begin_time: number;
+    end_time: number;
+    text: string;
+    words: Array<{
+      beginTime: number;
+      endTime: number;
+      text: string;
+    }>;
+    is_sentence_end: boolean;
+  }>;
+}
+
+interface GummyResponse {
+  header: {
+    event: string;
+    request_id: string;
+    task_id: string;
+  };
+  payload: {
+    transcription_result?: TranscriptionResult;
+    translation_result?: TranslationResult;
+    usage?: any;
+  };
+}
+
+export class GummyWebSocketASR {
   private websocket: WebSocket | null = null;
   private eventBus: EventBus;
-  private config: AlibabaASRConfig;
+  private config: GummyASRConfig;
   private isActive = false;
   private currentTranscript = '';
   private taskId = '';
+  private requestId = '';
   private audioContext: AudioContext | null = null;
   private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
@@ -58,15 +79,17 @@ export class AlibabaWebSocketASR {
   private wordHistory: Array<{word: string, time: number}> = [];
   private readonly WPM_WINDOW_MS = 5000;
 
-  constructor(eventBus: EventBus, config: AlibabaASRConfig) {
+  constructor(eventBus: EventBus, config: GummyASRConfig) {
     this.eventBus = eventBus;
     this.config = {
+      model: 'gummy-realtime-v1',
+      sampleRate: 16000,
       format: 'pcm',
-      sample_rate: 16000,
-      enable_intermediate_result: true,
-      enable_punctuation_prediction: true,
-      enable_inverse_text_normalization: true,
-      enable_words: true,
+      sourceLanguage: 'auto',
+      transcriptionEnabled: true,
+      translationEnabled: false,
+      translationTargetLanguages: ['en'],
+      maxEndSilence: 800,
       ...config
     };
   }
@@ -87,15 +110,16 @@ export class AlibabaWebSocketASR {
    */
   async start(): Promise<boolean> {
     if (this.isActive) {
-      console.warn('⚠️ Alibaba ASR already active');
+      console.warn('⚠️ Gummy ASR already active');
       return true;
     }
 
     try {
-      console.log('🎤 Starting Alibaba WebSocket ASR...');
+      console.log('🎤 Starting Gummy WebSocket ASR...');
       
-      // 生成任务ID
-      this.taskId = this.generateUUID().replace(/-/g, '');
+      // 生成任务ID和请求ID
+      this.taskId = this.generateUUID();
+      this.requestId = this.generateUUID();
       
       // 建立WebSocket连接
       await this.connectWebSocket();
@@ -103,29 +127,29 @@ export class AlibabaWebSocketASR {
       // 设置音频采集
       await this.setupAudioCapture();
       
-      // 发送启动指令
-      await this.sendStartTranscription();
+      // 发送任务启动指令
+      await this.sendRunTask();
       
       this.isActive = true;
       
       this.eventBus.publish({
         type: 'asr',
         t: Date.now(),
-        textDelta: '[阿里云ASR已启动，等待语音输入...]',
+        textDelta: '[Gummy ASR已启动，等待语音输入...]',
         isFinal: false,
         currentWPM: 0
       } as ASREvent);
       
-      console.log('✅ Alibaba ASR started successfully');
+      console.log('✅ Gummy ASR started successfully');
       return true;
       
     } catch (error) {
-      console.error('❌ Failed to start Alibaba ASR:', error);
+      console.error('❌ Failed to start Gummy ASR:', error);
       
       this.eventBus.publish({
         type: 'asr',
         t: Date.now(),
-        textDelta: `[阿里云ASR启动失败: ${error instanceof Error ? error.message : '未知错误'}]`,
+        textDelta: `[Gummy ASR启动失败: ${error instanceof Error ? error.message : '未知错误'}]`,
         isFinal: true,
         currentWPM: 0
       } as ASREvent);
@@ -139,12 +163,15 @@ export class AlibabaWebSocketASR {
    */
   private connectWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${this.config.token}`;
+      const wsUrl = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/';
       
       this.websocket = new WebSocket(wsUrl);
       
       this.websocket.onopen = () => {
-        console.log('✅ WebSocket connected to Alibaba ASR');
+        console.log('✅ WebSocket connected to Gummy ASR');
+        
+        // 发送认证信息 - 在实际使用中，这应该通过请求头或者特殊消息格式发送
+        // 但由于浏览器WebSocket API限制，我们需要在首个消息中包含认证信息
         resolve();
       };
       
@@ -176,32 +203,29 @@ export class AlibabaWebSocketASR {
    */
   private handleWebSocketMessage(event: MessageEvent): void {
     try {
-      const message = JSON.parse(event.data);
-      const { header, payload } = message;
+      const response: GummyResponse = JSON.parse(event.data);
+      const { header, payload } = response;
       
-      switch (header.name) {
-        case 'TranscriptionStarted':
-          console.log('🎤 Transcription started, session_id:', payload.session_id);
+      switch (header.event) {
+        case 'task-started':
+          console.log('🎤 Task started, task_id:', header.task_id);
           break;
           
-        case 'SentenceBegin':
-          console.log('📝 Sentence begin:', payload.index);
+        case 'result-generated':
+          this.handleResult(payload);
           break;
           
-        case 'TranscriptionResultChanged':
-          this.handleIntermediateResult(payload);
+        case 'task-finished':
+          console.log('✅ Task finished');
           break;
           
-        case 'SentenceEnd':
-          this.handleFinalResult(payload);
-          break;
-          
-        case 'TranscriptionCompleted':
-          console.log('✅ Transcription completed');
+        case 'task-failed':
+          console.error('❌ Task failed:', payload);
+          this.handleError(payload);
           break;
           
         default:
-          console.log('📨 Unknown message:', header.name);
+          console.log('📨 Unknown event:', header.event);
       }
       
     } catch (error) {
@@ -210,32 +234,30 @@ export class AlibabaWebSocketASR {
   }
 
   /**
-   * 处理中间识别结果
+   * 处理识别结果
    */
-  private handleIntermediateResult(payload: any): void {
-    if (payload.result && payload.result.trim()) {
-      // 发送中间结果
-      this.eventBus.publish({
-        type: 'asr',
-        t: Date.now(),
-        textDelta: payload.result,
-        isFinal: false,
-        currentWPM: this.getCurrentWPM(),
-        confidence: 0.7
-      } as ASREvent);
+  private handleResult(payload: any): void {
+    const { transcription_result, translation_result } = payload;
+    
+    // 处理转录结果
+    if (transcription_result && this.config.transcriptionEnabled) {
+      this.handleTranscriptionResult(transcription_result);
+    }
+    
+    // 处理翻译结果
+    if (translation_result && this.config.translationEnabled) {
+      this.handleTranslationResult(translation_result);
     }
   }
 
   /**
-   * 处理最终识别结果
+   * 处理转录结果
    */
-  private handleFinalResult(payload: any): void {
-    if (payload.result && payload.result.trim()) {
-      const result = payload.result.trim();
-      
+  private handleTranscriptionResult(result: TranscriptionResult): void {
+    if (result.text && result.text.trim()) {
       // 处理词信息用于WPM计算
-      if (payload.words && Array.isArray(payload.words)) {
-        payload.words.forEach((word: WordInfo) => {
+      if (result.words && Array.isArray(result.words)) {
+        result.words.forEach((word) => {
           this.wordHistory.push({ 
             word: word.text, 
             time: Date.now() 
@@ -249,19 +271,69 @@ export class AlibabaWebSocketASR {
         );
       }
       
-      // 发送最终结果
+      // 发送ASR事件
       this.eventBus.publish({
         type: 'asr',
         t: Date.now(),
-        textDelta: result + ' ',
-        isFinal: true,
+        textDelta: result.is_sentence_end ? result.text + ' ' : result.text,
+        isFinal: result.is_sentence_end,
         currentWPM: this.getCurrentWPM(),
-        confidence: payload.confidence || 0.9,
-        words: payload.words
+        confidence: 0.9,
+        words: result.words?.map(word => ({
+          w: word.text,
+          s: word.beginTime,
+          e: word.endTime,
+          confidence: 0.9
+        }))
       } as ASREvent);
       
-      console.log('📝 Final result:', result);
+      const logType = result.is_sentence_end ? 'Final' : 'Partial';
+      console.log(`📝 ${logType} transcription:`, result.text);
     }
+  }
+
+  /**
+   * 处理翻译结果
+   */
+  private handleTranslationResult(result: TranslationResult): void {
+    if (result.translations) {
+      Object.values(result.translations).forEach(translation => {
+        if (translation.text && translation.text.trim()) {
+          this.eventBus.publish({
+            type: 'asr',
+            t: Date.now(),
+            textDelta: `[${translation.language}] ${translation.text}${translation.is_sentence_end ? ' ' : ''}`,
+            isFinal: translation.is_sentence_end,
+            currentWPM: this.getCurrentWPM(),
+            confidence: 0.8,
+            words: translation.words?.map(word => ({
+              w: word.text,
+              s: word.beginTime,
+              e: word.endTime,
+              confidence: 0.8
+            }))
+          } as ASREvent);
+          
+          const logType = translation.is_sentence_end ? 'Final' : 'Partial';
+          console.log(`🌐 ${logType} translation [${translation.language}]:`, translation.text);
+        }
+      });
+    }
+  }
+
+  /**
+   * 处理错误
+   */
+  private handleError(payload: any): void {
+    const errorMessage = payload.message || '未知错误';
+    
+    this.eventBus.publish({
+      type: 'asr',
+      t: Date.now(),
+      textDelta: `[Gummy ASR错误: ${errorMessage}]`,
+      isFinal: true,
+      currentWPM: 0
+    } as ASREvent);
   }
 
   /**
@@ -272,7 +344,7 @@ export class AlibabaWebSocketASR {
       // 获取麦克风权限
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
-          sampleRate: this.config.sample_rate,
+          sampleRate: this.config.sampleRate,
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
@@ -282,7 +354,7 @@ export class AlibabaWebSocketASR {
       
       // 创建AudioContext
       this.audioContext = new AudioContext({ 
-        sampleRate: this.config.sample_rate 
+        sampleRate: this.config.sampleRate 
       });
       
       // 创建媒体源
@@ -299,7 +371,7 @@ export class AlibabaWebSocketASR {
           const pcmData = this.float32ToPCM16(inputBuffer);
           
           // 发送音频数据
-          this.websocket.send(pcmData);
+          this.sendAudioData(pcmData);
         }
       };
       
@@ -332,9 +404,9 @@ export class AlibabaWebSocketASR {
   }
 
   /**
-   * 发送开始转录指令
+   * 发送任务启动指令
    */
-  private sendStartTranscription(): Promise<void> {
+  private sendRunTask(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
         reject(new Error('WebSocket not connected'));
@@ -343,36 +415,58 @@ export class AlibabaWebSocketASR {
 
       const message = {
         header: {
-          message_id: this.generateUUID().replace(/-/g, ''),
+          action: 'run-task',
+          request_id: this.requestId,
           task_id: this.taskId,
-          namespace: 'SpeechTranscriber',
-          name: 'StartTranscription',
-          appkey: this.config.appkey
-        } as Header,
+          authorization: `bearer ${this.config.apiKey}`,
+          'data-inspection': 'enable'
+        },
         payload: {
-          format: this.config.format,
-          sample_rate: this.config.sample_rate,
-          enable_intermediate_result: this.config.enable_intermediate_result,
-          enable_punctuation_prediction: this.config.enable_punctuation_prediction,
-          enable_inverse_text_normalization: this.config.enable_inverse_text_normalization,
-          enable_words: this.config.enable_words
-        } as StartTranscriptionPayload
+          model: this.config.model,
+          task_group: 'audio',
+          task: 'asr',
+          function: 'recognition',
+          parameters: {
+            sample_rate: this.config.sampleRate,
+            format: this.config.format,
+            source_language: this.config.sourceLanguage,
+            transcription_enabled: this.config.transcriptionEnabled,
+            translation_enabled: this.config.translationEnabled,
+            translation_target_languages: this.config.translationTargetLanguages,
+            max_end_silence: this.config.maxEndSilence,
+            ...(this.config.vocabularyId && { vocabulary_id: this.config.vocabularyId })
+          }
+        }
       };
 
       this.websocket.send(JSON.stringify(message));
       
-      // 等待TranscriptionStarted事件
-      const checkStarted = () => {
-        if (this.isActive) {
-          resolve();
-        } else {
-          setTimeout(checkStarted, 100);
-        }
-      };
-      
-      setTimeout(checkStarted, 100);
-      setTimeout(() => reject(new Error('Start transcription timeout')), 10000);
+      // 等待task-started事件
+      setTimeout(() => resolve(), 1000);
+      setTimeout(() => reject(new Error('Run task timeout')), 10000);
     });
+  }
+
+  /**
+   * 发送音频数据
+   */
+  private sendAudioData(audioData: ArrayBuffer): void {
+    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      header: {
+        action: 'send-audio',
+        request_id: this.requestId,
+        task_id: this.taskId
+      },
+      payload: {
+        audio: Array.from(new Uint8Array(audioData))
+      }
+    };
+
+    this.websocket.send(JSON.stringify(message));
   }
 
   /**
@@ -413,18 +507,16 @@ export class AlibabaWebSocketASR {
   stop(): void {
     if (!this.isActive) return;
     
-    console.log('🛑 Stopping Alibaba ASR...');
+    console.log('🛑 Stopping Gummy ASR...');
     
-    // 发送停止指令
+    // 发送任务结束指令
     if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
       const stopMessage = {
         header: {
-          message_id: this.generateUUID().replace(/-/g, ''),
-          task_id: this.taskId,
-          namespace: 'SpeechTranscriber',
-          name: 'StopTranscription',
-          appkey: this.config.appkey
-        } as Header
+          action: 'finish-task',
+          request_id: this.requestId,
+          task_id: this.taskId
+        }
       };
       
       this.websocket.send(JSON.stringify(stopMessage));
@@ -470,7 +562,7 @@ export class AlibabaWebSocketASR {
       this.audioContext = null;
     }
     
-    console.log('🧹 Alibaba ASR cleaned up');
+    console.log('🧹 Gummy ASR cleaned up');
   }
 
   /**
