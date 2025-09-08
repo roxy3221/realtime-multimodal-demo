@@ -152,17 +152,24 @@ export class AlibabaASR {
    */
   sendAudio(audioData: ArrayBuffer): void {
     if (!this.isActive || !this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+      console.warn('⚠️ Cannot send audio: ASR not active or WebSocket not ready', {
+        isActive: this.isActive,
+        wsReady: this.websocket?.readyState === WebSocket.OPEN,
+        taskId: this.taskId
+      });
       return;
     }
 
     try {
       // 将 ArrayBuffer 转换为 base64
       const audioBase64 = this.arrayBufferToBase64(audioData);
+      console.log('🎵 Sending audio data, size:', audioData.byteLength, 'bytes, task_id:', this.taskId);
       
       const message: ASRMessage = {
         header: {
           action: 'run-task',
-          streaming: 'duplex'
+          streaming: 'duplex',
+          task_id: this.taskId || undefined
         },
         payload: {
           model: this.config.model,
@@ -187,14 +194,17 @@ export class AlibabaASR {
   private async connectWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        // 尝试通过查询参数传递认证信息
-        const wsUrl = 'wss://dashscope.aliyuncs.com/api/v1/services/aigc/asr/real-time-transcription';
+        // 构建阿里云ASR WebSocket URL - 使用正确的格式
+        const wsUrl = `wss://dashscope.aliyuncs.com/api/v1/services/aigc/asr/realtime-transcription`;
         
         console.log('🔗 Attempting to connect to Alibaba ASR WebSocket...');
+        console.log('🔑 API Key:', this.config.apiKey.substring(0, 8) + '***');
+        
+        // 创建WebSocket连接
         this.websocket = new WebSocket(wsUrl);
 
         this.websocket.onopen = () => {
-          console.log('✅ Alibaba ASR WebSocket connected');
+          console.log('✅ Alibaba ASR WebSocket connected successfully');
           resolve();
         };
 
@@ -240,7 +250,8 @@ export class AlibabaASR {
         streaming: 'duplex',
         attributes: {
           'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-DashScope-WorkSpace': 'default'
         }
       },
       payload: {
@@ -248,11 +259,14 @@ export class AlibabaASR {
         task: 'asr',
         parameters: {
           incremental_output: true,
-          enable_words_info: this.config.enableWordsInfo
+          enable_words_info: this.config.enableWordsInfo,
+          sample_rate: this.config.sampleRate,
+          format: this.config.format
         }
       }
     };
 
+    console.log('📤 Sending start message:', message);
     this.websocket.send(JSON.stringify(message));
   }
 
@@ -284,20 +298,36 @@ export class AlibabaASR {
    */
   private handleMessage(data: string): void {
     try {
+      console.log('📥 Received ASR message:', data);
       const response: ASRResponse = JSON.parse(data);
       
       // 保存任务ID
       if (response.header.task_id) {
         this.taskId = response.header.task_id;
+        console.log('📋 Task ID saved:', this.taskId);
       }
 
+      // 处理不同类型的事件
+      console.log('🎯 Event type:', response.header.event);
+      
+      if (response.header.event === 'task-started') {
+        console.log('✅ ASR task started successfully');
+      }
+      
       // 处理识别结果
       if (response.header.event === 'result-generated' && response.payload.output?.sentence) {
+        console.log('📝 Recognition result:', response.payload.output.sentence);
         this.handleRecognitionResult(response.payload.output.sentence);
+      }
+      
+      // 处理错误
+      if (response.header.event === 'task-failed') {
+        console.error('❌ ASR task failed:', response);
       }
 
     } catch (error) {
       console.error('❌ Failed to parse ASR response:', error);
+      console.error('📄 Raw data:', data);
     }
   }
 
