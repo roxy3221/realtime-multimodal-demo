@@ -6,7 +6,7 @@
 import type { FaceEvent, ProsodyEvent, MediaConfig } from '../types';
 import { EventBus } from '../events/EventBus';
 import { DEFAULT_MEDIA_CONFIG } from '../config/defaults';
-import { WebSpeechASR } from '../asr/WebSpeechASR';
+import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
 
 export class WebRTCMediaCapture {
   private peerConnection: RTCPeerConnection | null = null;
@@ -19,7 +19,7 @@ export class WebRTCMediaCapture {
   private videoCanvasContext: OffscreenCanvasRenderingContext2D | null = null;
   private frameProcessingRate = 15; // FPS for face detection
   private videoWorkerReady = false; // 添加Worker就绪状态
-  private asr: WebSpeechASR | null = null;
+  private asr: GummyWebSocketASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -234,7 +234,7 @@ export class WebRTCMediaCapture {
           break;
           
         case 'audio-data':
-          // WebSpeechASR直接使用麦克风输入，不需要发送音频数据
+          // GummyWebSocketASR 通过 AudioContext 获取音频数据，不需要手动发送
           // 保留此处理器以备将来使用其他ASR服务
           break;
       }
@@ -316,10 +316,30 @@ export class WebRTCMediaCapture {
   }
 
   /**
-   * 设置ASR
+   * 设置ASR - 只使用阿里云Gummy ASR
    */
   private setupASR(): void {
-    this.asr = new WebSpeechASR(this.eventBus);
+    console.log('🗣️ Setting up Gummy ASR...');
+    
+    // 检查环境变量中的阿里云配置
+    const gummyApiKey = import.meta.env?.VITE_ALIBABA_API_KEY || import.meta.env?.VITE_DASHSCOPE_API_KEY;
+    
+    if (gummyApiKey) {
+      console.log('🎯 Using Gummy WebSocket ASR');
+      this.asr = new GummyWebSocketASR(this.eventBus, {
+        apiKey: gummyApiKey,
+        model: 'gummy-realtime-v1',
+        sampleRate: 16000,
+        format: 'pcm',
+        sourceLanguage: 'auto',
+        transcriptionEnabled: true,
+        translationEnabled: false,
+        maxEndSilence: 800
+      });
+    } else {
+      console.error('❌ No Alibaba Cloud API key provided. Please set VITE_ALIBABA_API_KEY or VITE_DASHSCOPE_API_KEY');
+      throw new Error('Alibaba Cloud API key is required for Gummy ASR');
+    }
   }
 
   /**
@@ -337,7 +357,11 @@ export class WebRTCMediaCapture {
     
     // 启动ASR
     if (this.asr) {
-      this.asr.start();
+      try {
+        await this.asr.start();
+      } catch (error) {
+        console.error('❌ Failed to start ASR:', error);
+      }
     }
     
     // 启动视频帧处理循环

@@ -23,12 +23,8 @@ interface FaceDetectionResults {
   faceBlendshapes: Blendshapes[];
   faceLandmarks?: unknown[];
 }
-import { WebSpeechASR } from '../asr/WebSpeechASR';
-import { AlibabaASR } from '../asr/AlibabaASR';
-import { AlibabaWebSocketASR } from '../asr/AlibabaWebSocketASR';
 import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
-import { logASRDiagnostics } from '../utils/asrUtils';
 
 export class SimpleMediaCapture {
   private stream: MediaStream | null = null;
@@ -48,7 +44,7 @@ export class SimpleMediaCapture {
   // 音频分析状态
   private lastProsodyEventTime = 0;
   
-  private asr: WebSpeechASR | AlibabaASR | AlibabaWebSocketASR | GummyWebSocketASR | null = null;
+  private asr: GummyWebSocketASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -166,7 +162,7 @@ export class SimpleMediaCapture {
         if (event.data.type === 'prosody-event') {
           this.handleProsodyEvent(event.data.data);
         }
-        // WebSpeechASR 不需要手动发送音频数据，它直接监听麦克风
+        // GummyWebSocketASR 通过 AudioContext 获取音频数据，不需要手动发送
       };
       
       audioSource.connect(this.audioWorklet);
@@ -185,31 +181,16 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 设置ASR - 智能选择最合适的ASR方案
+   * 设置ASR - 只使用阿里云Gummy ASR
    */
   private setupASR(): void {
-    console.log('🗣️ Setting up ASR...');
-    
-    // 诊断ASR支持情况
-    logASRDiagnostics();
-    
-    // ASR方案选择优先级:
-    // 1. 优先尝试Gummy WebSocket ASR (如果配置了DashScope API key)
-    // 2. 回退到WebSpeech API (如果支持且在安全上下文中)
-    // 3. 使用阿里云WebSocket ASR (需要token配置)
-    // 4. 最后使用DashScope API (需要API key配置)
-    
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const hasWebSpeech = !!SpeechRecognition && window.isSecureContext;
+    console.log('🗣️ Setting up Gummy ASR...');
     
     // 检查环境变量中的阿里云配置
-    const gummyApiKey = import.meta.env?.VITE_DASHSCOPE_API_KEY;
-    const alibabaToken = import.meta.env?.VITE_ALIBABA_ASR_TOKEN;
-    const alibabaAppkey = import.meta.env?.VITE_ALIBABA_ASR_APPKEY;
-    const alibabaApiKey = import.meta.env?.VITE_ALIBABA_API_KEY;
+    const gummyApiKey = import.meta.env?.VITE_ALIBABA_API_KEY || import.meta.env?.VITE_DASHSCOPE_API_KEY;
     
     if (gummyApiKey) {
-      console.log('🎯 Using Gummy WebSocket ASR (preferred option)');
+      console.log('🎯 Using Gummy WebSocket ASR');
       this.asr = new GummyWebSocketASR(this.eventBus, {
         apiKey: gummyApiKey,
         model: 'gummy-realtime-v1',
@@ -220,38 +201,9 @@ export class SimpleMediaCapture {
         translationEnabled: false,
         maxEndSilence: 800
       });
-    } else if (hasWebSpeech) {
-      console.log('✅ Using WebSpeech API (fallback option)');
-      this.asr = new WebSpeechASR(this.eventBus);
-    } else if (alibabaToken && alibabaAppkey) {
-      console.log('🔄 Using Alibaba WebSocket ASR (fallback)');
-      this.asr = new AlibabaWebSocketASR(this.eventBus, {
-        token: alibabaToken,
-        appkey: alibabaAppkey,
-        sample_rate: 16000,
-        enable_intermediate_result: true,
-        enable_punctuation_prediction: true,
-        enable_inverse_text_normalization: true,
-        enable_words: true
-      });
-    } else if (alibabaApiKey) {
-      console.log('🔄 Using Alibaba DashScope ASR (fallback)');
-      this.asr = new AlibabaASR(this.eventBus, {
-        apiKey: alibabaApiKey,
-        model: 'paraformer-realtime-v2',
-        sampleRate: 16000,
-        format: 'pcm',
-        enableWordsInfo: true
-      });
     } else {
-      console.warn('⚠️ No ASR service available. Please configure one of the following:');
-      console.warn('1. Set VITE_DASHSCOPE_API_KEY for Gummy ASR (recommended)');
-      console.warn('2. Use HTTPS/localhost for WebSpeech API');
-      console.warn('3. Set VITE_ALIBABA_ASR_TOKEN and VITE_ALIBABA_ASR_APPKEY for Alibaba WebSocket ASR');
-      console.warn('4. Set VITE_ALIBABA_API_KEY for Alibaba DashScope ASR');
-      
-      // 创建一个假的ASR来显示错误信息
-      this.asr = new WebSpeechASR(this.eventBus);
+      console.error('❌ No Alibaba Cloud API key provided. Please set VITE_ALIBABA_API_KEY or VITE_DASHSCOPE_API_KEY');
+      throw new Error('Alibaba Cloud API key is required for Gummy ASR');
     }
   }
 

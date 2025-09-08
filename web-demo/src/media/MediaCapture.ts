@@ -6,7 +6,7 @@
 import type { FaceEvent, ProsodyEvent, MediaConfig } from '../types';
 import { EventBus } from '../events/EventBus';
 import { DEFAULT_MEDIA_CONFIG } from '../config/defaults';
-import { WebSpeechASR } from '../asr/WebSpeechASR';
+import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
 
 export class MediaCapture {
   private stream: MediaStream | null = null;
@@ -14,7 +14,7 @@ export class MediaCapture {
   private audioContext: AudioContext | null = null;
   private audioWorklet: AudioWorkletNode | null = null;
   private videoWorker: Worker | null = null;
-  private asr: WebSpeechASR | null = null;
+  private asr: GummyWebSocketASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -403,7 +403,24 @@ export class MediaCapture {
    * 设置ASR
    */
   private setupASR(): void {
-    this.asr = new WebSpeechASR(this.eventBus);
+    // Get API key from environment variables
+    const apiKey = import.meta.env.VITE_ALIBABA_API_KEY;
+    
+    if (!apiKey) {
+      console.warn('⚠️ No Alibaba Cloud API key provided, ASR disabled');
+      return;
+    }
+    
+    this.asr = new GummyWebSocketASR(this.eventBus, {
+      apiKey: apiKey,
+      model: 'gummy-realtime-v1',
+      sampleRate: 16000,
+      format: 'pcm',
+      sourceLanguage: 'auto',
+      transcriptionEnabled: true,
+      translationEnabled: false,
+      maxEndSilence: 800
+    });
   }
 
   /**
@@ -421,7 +438,11 @@ export class MediaCapture {
     
     // 启动ASR
     if (this.asr) {
-      this.asr.start();
+      try {
+        await this.asr.start();
+      } catch (error) {
+        console.error('❌ Failed to start ASR:', error);
+      }
     }
     
     // 启动视频帧处理循环

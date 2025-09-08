@@ -2,15 +2,14 @@
  * ASR工具函数 - 用于检查和调试语音识别状态
  */
 
-export function checkASRSupport(): {
-  webSpeechSupported: boolean;
+export function checkGummyASRSupport(): {
   isSecureContext: boolean;
+  hasApiKey: boolean;
   browserInfo: string;
   recommendations: string[];
 } {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const webSpeechSupported = !!SpeechRecognition;
   const isSecureContext = window.isSecureContext;
+  const hasApiKey = !!(import.meta.env?.VITE_ALIBABA_API_KEY || import.meta.env?.VITE_DASHSCOPE_API_KEY);
   
   // 检测浏览器
   const userAgent = navigator.userAgent;
@@ -27,25 +26,17 @@ export function checkASRSupport(): {
   
   const recommendations: string[] = [];
   
-  if (!webSpeechSupported) {
-    recommendations.push('请使用Chrome、Edge或其他支持Web Speech API的浏览器');
+  if (!hasApiKey) {
+    recommendations.push('请配置阿里云API密钥：设置VITE_ALIBABA_API_KEY或VITE_DASHSCOPE_API_KEY环境变量');
   }
   
   if (!isSecureContext) {
     recommendations.push('请使用HTTPS协议或localhost访问');
   }
   
-  if (browserInfo === 'Firefox') {
-    recommendations.push('Firefox对Web Speech API支持有限，建议使用Chrome');
-  }
-  
-  if (browserInfo === 'Safari') {
-    recommendations.push('Safari的Web Speech API支持可能不完整，建议使用Chrome');
-  }
-  
   return {
-    webSpeechSupported,
     isSecureContext,
+    hasApiKey,
     browserInfo,
     recommendations
   };
@@ -100,9 +91,9 @@ export async function testMicrophonePermission(): Promise<{
 }
 
 export function logASRDiagnostics(): void {
-  console.group('🔍 ASR诊断信息');
+  console.group('🔍 Gummy ASR诊断信息');
   
-  const support = checkASRSupport();
+  const support = checkGummyASRSupport();
   console.log('🌐 浏览器支持:', support);
   
   testMicrophonePermission().then(permission => {
