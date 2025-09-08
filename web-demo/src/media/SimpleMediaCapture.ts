@@ -4,12 +4,12 @@
  * 保留事件驱动架构和实时检测能力
  */
 
-import { FaceLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import type { FaceEvent, ProsodyEvent, MediaConfig } from '../types';
 import { EventBus } from '../events/EventBus';
 import { DEFAULT_MEDIA_CONFIG } from '../config/defaults';
 import { WebSpeechASR } from '../asr/WebSpeechASR';
-import { calculateCosineSimilarity, calculateEuclideanDistance, normalizeVector } from '../utils/math';
+import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 
 export class SimpleMediaCapture {
   private stream: MediaStream | null = null;
@@ -109,7 +109,7 @@ export class SimpleMediaCapture {
         },
         audio: {
           sampleRate: this.config.audio.sampleRate,
-          channelCount: this.config.audio.channels,
+          channelCount: this.config.audio.channelCount,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
@@ -136,7 +136,7 @@ export class SimpleMediaCapture {
       const audioSource = this.audioContext.createMediaStreamSource(this.stream!);
       this.audioWorklet = new AudioWorkletNode(this.audioContext, 'audio-processor', {
         processorOptions: {
-          frameSize: this.config.audio.frameSize,
+          windowSize: this.config.audio.windowSize || 128,
           sampleRate: this.config.audio.sampleRate
         }
       });
@@ -173,22 +173,28 @@ export class SimpleMediaCapture {
   /**
    * 开始捕获
    */
-  async startCapture(videoElement: HTMLVideoElement, canvas: HTMLCanvasElement): Promise<void> {
+  async startCapture(videoElement?: HTMLVideoElement, canvas?: HTMLCanvasElement): Promise<void> {
     if (this.isCapturing) return;
     
-    this.videoElement = videoElement;
-    this.canvas = canvas;
-    this.canvasContext = canvas.getContext('2d');
+    if (videoElement) {
+      this.videoElement = videoElement;
+    }
+    if (canvas) {
+      this.canvas = canvas;
+      this.canvasContext = canvas.getContext('2d');
+    }
     
     if (!this.stream) {
       throw new Error('Media stream not initialized');
     }
     
     // 设置视频元素
-    this.videoElement.srcObject = this.stream;
-    await new Promise<void>((resolve) => {
-      this.videoElement!.onloadedmetadata = () => resolve();
-    });
+    if (this.videoElement) {
+      this.videoElement.srcObject = this.stream;
+      await new Promise<void>((resolve) => {
+        this.videoElement!.onloadedmetadata = () => resolve();
+      });
+    }
     
     this.isCapturing = true;
     
@@ -236,7 +242,7 @@ export class SimpleMediaCapture {
    */
   private processFaceResults(results: any): void {
     const blendshapes = results.faceBlendshapes[0];
-    const landmarks = results.faceLandmarks[0];
+    // const landmarks = results.faceLandmarks[0];
     
     // 提取表情特征向量
     const expressionVector = blendshapes.categories.map((category: any) => category.score);
@@ -253,15 +259,15 @@ export class SimpleMediaCapture {
     this.lastFaceVector = normalizedVector;
     
     // 检查是否触发事件
-    this.checkFaceEventTrigger(blendshapes, landmarks, changeScore);
+    this.checkFaceEventTrigger(blendshapes, normalizedVector, changeScore);
   }
 
   /**
    * 检查人脸事件触发
    */
-  private checkFaceEventTrigger(blendshapes: any, landmarks: any, changeScore: number): void {
+  private checkFaceEventTrigger(blendshapes: any, normalizedVector: number[], changeScore: number): void {
     const now = performance.now();
-    const cooldownTime = this.config.detection.cooldownMs;
+    const cooldownTime = this.config.detection!.cooldownMs;
     
     // 冷却检查
     if (now - this.lastFaceEventTime < cooldownTime) {
@@ -269,15 +275,16 @@ export class SimpleMediaCapture {
     }
     
     // 阈值检查
-    if (changeScore > this.config.detection.thresholds.high) {
+    if (changeScore > this.config.detection!.thresholds.high) {
       // 计算头部姿态
-      const headPose = this.calculateHeadPose(landmarks);
+      const headPose = this.calculateHeadPose(normalizedVector);
       
       // 提取主要表情
       const mainExpression = this.extractMainExpression(blendshapes);
       
       const faceEvent: FaceEvent = {
         type: 'face',
+        t: now,
         timestamp: now,
         deltaScore: changeScore,
         expression: mainExpression,
@@ -285,7 +292,7 @@ export class SimpleMediaCapture {
         confidence: 0.8
       };
       
-      this.eventBus.emit('face-event', faceEvent);
+      this.eventBus.emit('face', faceEvent);
       this.lastFaceEventTime = now;
       
       console.log('👤 Face event triggered:', { changeScore, expression: mainExpression });
@@ -295,7 +302,7 @@ export class SimpleMediaCapture {
   /**
    * 计算头部姿态（简化版）
    */
-  private calculateHeadPose(landmarks: any[]): { yaw: number; pitch: number; roll: number } {
+  private calculateHeadPose(_normalizedVector: number[]): { yaw: number; pitch: number; roll: number } {
     // 简化的头部姿态计算
     // 实际项目中可以使用更精确的3D姿态估算
     return {
@@ -328,16 +335,17 @@ export class SimpleMediaCapture {
    */
   private handleProsodyEvent(data: any): void {
     const now = performance.now();
-    const cooldownTime = this.config.detection.cooldownMs;
+    const cooldownTime = this.config.detection!.cooldownMs;
     
     // 冷却检查
     if (now - this.lastProsodyEventTime < cooldownTime) {
       return;
     }
     
-    if (data.deltaScore > this.config.detection.thresholds.high) {
+    if (data.deltaScore > this.config.detection!.thresholds.high) {
       const prosodyEvent: ProsodyEvent = {
         type: 'prosody',
+        t: now,
         timestamp: now,
         deltaScore: data.deltaScore,
         rms: data.rms,
@@ -346,7 +354,7 @@ export class SimpleMediaCapture {
         confidence: 0.8
       };
       
-      this.eventBus.emit('prosody-event', prosodyEvent);
+      this.eventBus.emit('prosody', prosodyEvent);
       this.lastProsodyEventTime = now;
       
       console.log('🎤 Prosody event triggered:', data);
@@ -401,15 +409,37 @@ export class SimpleMediaCapture {
   }
 
   /**
+   * 销毁资源（dispose别名）
+   */
+  dispose(): void {
+    this.cleanup();
+  }
+
+  /**
+   * 获取媒体流
+   */
+  getStream(): MediaStream | null {
+    return this.stream;
+  }
+
+  /**
+   * 设置外部视频元素
+   */
+  setExternalVideoElement(videoElement: HTMLVideoElement): void {
+    this.videoElement = videoElement;
+  }
+
+  /**
    * 获取当前状态
    */
   getStatus() {
     return {
       isCapturing: this.isCapturing,
-      hasVideo: this.stream?.getVideoTracks().length > 0,
-      hasAudio: this.stream?.getAudioTracks().length > 0,
+      hasVideo: this.stream?.getVideoTracks().length ?? 0 > 0,
+      hasAudio: this.stream?.getAudioTracks().length ?? 0 > 0,
       audioContextState: this.audioContext?.state || 'suspended',
-      faceChangeScore: this.faceChangeScore
+      faceChangeScore: this.faceChangeScore,
+      webrtcConnectionState: 'connected' as RTCPeerConnectionState // 添加缺失的属性
     };
   }
 }

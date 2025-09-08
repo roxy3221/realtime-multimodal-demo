@@ -125,5 +125,13 @@ export interface MediaConfig {
     echoCancellation: boolean;
     noiseSuppression: boolean;
     windowSize?: number; // 音频窗口大小
+    frameSize?: number; // 音频帧大小
+  };
+  detection: {
+    cooldownMs: number;
+    thresholds: {
+      high: number;
+      low: number;
+    };
   };
 }

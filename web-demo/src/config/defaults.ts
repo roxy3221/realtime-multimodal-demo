@@ -58,6 +58,14 @@ export const DEFAULT_MEDIA_CONFIG: MediaConfig = {
     echoCancellation: true,
     noiseSuppression: true,
     windowSize: 1024,  // 添加窗口大小
+    frameSize: 128,    // 添加帧大小
+  },
+  detection: {
+    cooldownMs: 1200,  // 冷却时间
+    thresholds: {
+      high: 0.6,       // 进入阈值
+      low: 0.4,        // 退出阈值
+    },
   },
 };
 

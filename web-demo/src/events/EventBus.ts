@@ -49,6 +49,13 @@ export class EventBus {
   }
 
   /**
+   * 发出事件（别名方法）
+   */
+  emit<T extends MultiModalEvent>(_eventType: string, event: T): void {
+    this.publish(event);
+  }
+
+  /**
    * 订阅事件类型
    */
   subscribe<T extends MultiModalEvent>(

@@ -13,8 +13,7 @@ function App() {
   const [mediaStatus, setMediaStatus] = useState({
     hasVideo: false,
     hasAudio: false,
-    audioContextState: 'suspended' as AudioContextState,
-    webrtcConnectionState: 'new' as RTCPeerConnectionState
+    audioContextState: 'suspended' as AudioContextState
   });
   
   // 新增状态
@@ -73,12 +72,12 @@ function App() {
               pitch: event.pose.pitch
             },
             expression: {
-              type: String(event.expr.type || '中性'),
-              confidence: Math.round((event.expr.confidence || 0) * 100)
+              type: String(event.expression?.type || '中性'),
+              confidence: Math.round((event.confidence || 0) * 100)
             },
             eyeState: {
-              state: String(event.expr.type) === '疲劳' ? '疲劳' : '正常',
-              ear: event.expr.ear || 0.30
+              state: String(event.expression?.type) === '疲劳' ? '疲劳' : '正常',
+              ear: event.expression?.ear || 0.30
             },
             faceStability: {
               state: event.deltaScore > 0.6 ? '不稳定' : '稳定',
@@ -200,16 +199,15 @@ function App() {
       }
       
       // 开始采集
-      await mediaCaptureRef.current.startCapture();
+      await mediaCaptureRef.current.startCapture(videoPreviewRef.current || undefined);
       
       // 更新状态
       setIsCapturing(true);
       const status = mediaCaptureRef.current.getStatus();
       setMediaStatus({
-        hasVideo: status.hasVideo,
-        hasAudio: status.hasAudio,
-        audioContextState: status.audioContextState || 'suspended',
-        webrtcConnectionState: status.webrtcConnectionState || 'new'
+        hasVideo: !!status.hasVideo,
+        hasAudio: !!status.hasAudio,
+        audioContextState: status.audioContextState
       });
       
       console.log('✅ Demo started successfully');
@@ -226,10 +224,9 @@ function App() {
     setIsCapturing(false);
     const status = mediaCaptureRef.current.getStatus();
     setMediaStatus({
-      hasVideo: status.hasVideo,
-      hasAudio: status.hasAudio,
-      audioContextState: status.audioContextState || 'suspended',
-      webrtcConnectionState: status.webrtcConnectionState || 'new'
+      hasVideo: !!status.hasVideo,
+      hasAudio: !!status.hasAudio,
+      audioContextState: status.audioContextState
     });
     
     console.log('⏹️ Demo stopped');

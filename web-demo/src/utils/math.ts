@@ -50,6 +50,32 @@ export function zScoreNormalize(
 }
 
 /**
+ * 计算余弦相似度
+ */
+export function calculateCosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error('Vectors must have same length');
+  }
+  
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  
+  normA = Math.sqrt(normA);
+  normB = Math.sqrt(normB);
+  
+  if (normA === 0 || normB === 0) return 0; // 无相似性
+  
+  return dotProduct / (normA * normB);
+}
+
+/**
  * 计算余弦距离（用于表情向量比较）
  */
 export function cosineDistance(a: number[], b: number[]): number {
@@ -77,7 +103,33 @@ export function cosineDistance(a: number[], b: number[]): number {
 }
 
 /**
+ * 向量标准化
+ */
+export function normalizeVector(vector: number[]): number[] {
+  const norm = Math.sqrt(vector.reduce((sum, x) => sum + x * x, 0));
+  if (norm === 0) return vector; // 避免除零
+  return vector.map(x => x / norm);
+}
+
+/**
  * 计算欧氏距离
+ */
+export function calculateEuclideanDistance(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error('Vectors must have same length');
+  }
+  
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const diff = a[i] - b[i];
+    sum += diff * diff;
+  }
+  
+  return Math.sqrt(sum);
+}
+
+/**
+ * 计算欧氏距离（已有别名）
  */
 export function euclideanDistance(a: number[], b: number[]): number {
   if (a.length !== b.length) {

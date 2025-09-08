@@ -13,23 +13,27 @@ export interface BaseEvent {
 // 人脸事件（显著变化）
 export interface FaceEvent extends BaseEvent {
   type: 'face';
+  timestamp: number;  // 增加 timestamp 字段
   deltaScore: number; // 0~1，变化强度
-  expr: Record<string, number>; // 表情分数 {Smile:0.72, Frown:0.08, ...}
+  expression: Record<string, number>; // 表情分数 {Smile:0.72, Frown:0.08, ...}
   pose: {
     yaw: number;   // 左右转头角度
     pitch: number; // 上下点头角度 
     roll: number;  // 左右歪头角度
   };
+  confidence: number; // 置信度
   landmarks?: number[]; // 可选的关键点数据
 }
 
 // 韵律事件（显著变化）
 export interface ProsodyEvent extends BaseEvent {
   type: 'prosody';
+  timestamp: number;  // 增加 timestamp 字段
   deltaScore: number; // 0~1，变化强度
   rms: number;        // 音量能量
   f0: number;         // 基频/音高
   wpm: number;        // 语速 (words per minute)
+  confidence: number; // 置信度
   vad?: boolean;      // VAD检测结果
 }
 

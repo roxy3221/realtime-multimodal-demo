@@ -380,9 +380,11 @@ export class MediaCapture {
           this.eventBus.publish({
             type: 'face',
             t: Date.now(),
+            timestamp: Date.now(),
             deltaScore: data.deltaScore,
-            expr: data.expr,
-            pose: data.pose
+            expression: data.expr,
+            pose: data.pose,
+            confidence: data.confidence || 0.8
           } as FaceEvent);
           break;
           
