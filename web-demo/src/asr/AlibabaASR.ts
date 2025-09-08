@@ -48,6 +48,8 @@ interface ASRMessage {
     parameters?: {
       incremental_output?: boolean;
       enable_words_info?: boolean;
+      sample_rate?: number;
+      format?: string;
     };
   };
 }

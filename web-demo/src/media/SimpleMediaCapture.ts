@@ -163,10 +163,8 @@ export class SimpleMediaCapture {
       this.audioWorklet.port.onmessage = (event) => {
         if (event.data.type === 'prosody-event') {
           this.handleProsodyEvent(event.data.data);
-        } else if (event.data.type === 'audio-data' && this.asr instanceof AlibabaASR) {
-          // 如果使用阿里云ASR，发送音频数据
-          this.asr.sendAudio(event.data.audioBuffer);
         }
+        // WebSpeechASR 不需要手动发送音频数据，它直接监听麦克风
       };
       
       audioSource.connect(this.audioWorklet);
@@ -188,14 +186,8 @@ export class SimpleMediaCapture {
    * 设置ASR - 使用阿里云实时ASR
    */
   private setupASR(): void {
-    console.log('🌐 Using Alibaba Cloud ASR');
-    this.asr = new AlibabaASR(this.eventBus, {
-      apiKey: 'sk-467167e4565f4c9ca5ecc56b682b4a1e',
-      model: 'paraformer-realtime-v2',
-      sampleRate: 16000,
-      format: 'pcm',
-      enableWordsInfo: true
-    });
+    console.log('🗣️ Using Web Speech API ASR');
+    this.asr = new WebSpeechASR(this.eventBus);
   }
 
   /**
