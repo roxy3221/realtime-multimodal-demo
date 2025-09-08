@@ -324,7 +324,7 @@ export class SimpleMediaCapture {
         t: now,
         timestamp: now,
         deltaScore: 0,
-        expression: { type: '无人脸', confidence: 0 },
+        expression: {},
         pose: { yaw: 0, pitch: 0, roll: 0 },
         confidence: 0
       };
