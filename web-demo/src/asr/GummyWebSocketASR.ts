@@ -163,15 +163,18 @@ export class GummyWebSocketASR {
    */
   private connectWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const wsUrl = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/';
+      // 使用代理服务器URL而不是直连阿里云
+      const proxyUrl = import.meta.env.VITE_ALI_ASR_PROXY_URL;
+      if (!proxyUrl) {
+        reject(new Error('VITE_ALI_ASR_PROXY_URL environment variable not configured'));
+        return;
+      }
       
-      this.websocket = new WebSocket(wsUrl);
+      console.log('🔗 Connecting to Ali ASR proxy:', proxyUrl);
+      this.websocket = new WebSocket(proxyUrl);
       
       this.websocket.onopen = () => {
-        console.log('✅ WebSocket connected to Gummy ASR');
-        
-        // 发送认证信息 - 在实际使用中，这应该通过请求头或者特殊消息格式发送
-        // 但由于浏览器WebSocket API限制，我们需要在首个消息中包含认证信息
+        console.log('✅ WebSocket connected to Ali ASR proxy');
         resolve();
       };
       
@@ -181,7 +184,7 @@ export class GummyWebSocketASR {
       
       this.websocket.onerror = (error) => {
         console.error('❌ WebSocket error:', error);
-        reject(new Error('WebSocket connection failed'));
+        reject(new Error('WebSocket connection failed - check proxy server'));
       };
       
       this.websocket.onclose = (event) => {
@@ -418,7 +421,7 @@ export class GummyWebSocketASR {
           action: 'run-task',
           request_id: this.requestId,
           task_id: this.taskId,
-          authorization: `bearer ${this.config.apiKey}`,
+          // API密钥由代理服务器添加，前端不需要发送
           'data-inspection': 'enable'
         },
         payload: {

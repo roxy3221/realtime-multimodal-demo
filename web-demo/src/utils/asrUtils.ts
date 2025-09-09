@@ -4,12 +4,14 @@
 
 export function checkGummyASRSupport(): {
   isSecureContext: boolean;
-  hasApiKey: boolean;
+  hasProxyUrl: boolean;
   browserInfo: string;
   recommendations: string[];
+  canUseCloudASR: boolean;
+  webSpeechSupported: boolean;
 } {
   const isSecureContext = window.isSecureContext;
-  const hasApiKey = !!(import.meta.env?.VITE_ALIBABA_API_KEY || import.meta.env?.VITE_DASHSCOPE_API_KEY);
+  const hasProxyUrl = !!(import.meta.env?.VITE_ALI_ASR_PROXY_URL);
   
   // 检测浏览器
   const userAgent = navigator.userAgent;
@@ -24,21 +26,33 @@ export function checkGummyASRSupport(): {
     browserInfo = 'Edge';
   }
   
+  // 检查Web Speech API支持
+  const webSpeechSupported = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+  
+  // 通过代理服务器使用云端ASR
+  const canUseCloudASR = hasProxyUrl && isSecureContext;
+  
   const recommendations: string[] = [];
   
-  if (!hasApiKey) {
-    recommendations.push('请配置阿里云API密钥：设置VITE_ALIBABA_API_KEY或VITE_DASHSCOPE_API_KEY环境变量');
+  if (!hasProxyUrl) {
+    recommendations.push('请配置阿里云ASR代理服务器：设置VITE_ALI_ASR_PROXY_URL环境变量');
   }
   
   if (!isSecureContext) {
     recommendations.push('请使用HTTPS协议或localhost访问');
   }
   
+  if (!canUseCloudASR && !webSpeechSupported) {
+    recommendations.push('当前环境不支持语音识别，请检查代理服务器配置或使用Chrome浏览器');
+  }
+  
   return {
     isSecureContext,
-    hasApiKey,
+    hasProxyUrl,
     browserInfo,
-    recommendations
+    recommendations,
+    canUseCloudASR,
+    webSpeechSupported
   };
 }
 

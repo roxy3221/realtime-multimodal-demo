@@ -1,27 +1,50 @@
-# Vercel 部署说明
+# Vercel 部署说明 (更新版 - 使用代理服务器)
 
-## 快速部署步骤
+## 重要更新：阿里云ASR修复
 
-### 1. 连接 GitHub 到 Vercel
+由于浏览器环境的CORS和认证限制，现在使用代理服务器方案：
 
-1. 访问 [Vercel Dashboard](https://vercel.com/dashboard)
-2. 点击 "New Project"
-3. 连接你的 GitHub 账户并选择此项目的仓库
+### 修复前的问题
+- ❌ 浏览器不能直连阿里云ASR WebSocket
+- ❌ 无法在WebSocket中添加Authorization头
+- ❌ CORS策略阻止跨域连接
 
-### 2. 配置环境变量
+### 修复后的架构
+✅ **浏览器** → **代理服务器(Render)** → **阿里云ASR**
+- 代理服务器处理认证和CORS问题
+- 前端不再暴露API密钥
+- 连接稳定可靠
+
+## 部署步骤
+
+### 步骤1: 部署代理服务器到Render
+
+1. 将 `/proxy-server/` 目录推送到GitHub仓库
+2. 访问 [Render Dashboard](https://render.com)
+3. 创建新的 "Web Service"
+4. 连接GitHub仓库，选择 `proxy-server` 目录
+5. 配置：
+   - Name: `ali-asr-proxy`  
+   - Environment: `Node`
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+6. 添加环境变量：
+   - `DASHSCOPE_API_KEY`: 你的阿里云DashScope API密钥
+7. 部署完成后记录URL (格式：`https://xxx.onrender.com`)
+
+### 步骤2: 配置Vercel环境变量
 
 在 Vercel 项目设置中添加以下环境变量：
 
 #### 必需的环境变量：
 ```
-VITE_DASHSCOPE_API_KEY=sk-71a07e1a3381400399e4b427e94cbc80
+VITE_ALI_ASR_PROXY_URL=wss://你的render域名.onrender.com/ali-asr
 ```
 
 #### 可选的环境变量：
 ```
 VITE_APP_ENV=production
 VITE_APP_NAME=实时多模态分析演示
-VITE_ASR_PROVIDER=gummy
 VITE_MEDIAPIPE_CDN=https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0
 ```
 
@@ -32,77 +55,57 @@ VITE_MEDIAPIPE_CDN=https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0
 3. 在左侧菜单中选择 "Environment Variables"
 4. 点击 "Add New" 按钮
 5. 输入变量名和值：
-   - Name: `VITE_DASHSCOPE_API_KEY`
-   - Value: `sk-71a07e1a3381400399e4b427e94cbc80`
+   - Name: `VITE_ALI_ASR_PROXY_URL`
+   - Value: `wss://你的render域名.onrender.com/ali-asr`
    - Environment: 选择 `Production`, `Preview`, `Development` (建议全选)
 6. 点击 "Save"
-7. 对其他环境变量重复此过程
 
-### 3. 部署配置
+### 步骤3: 重新部署Vercel
 
-项目已包含 `vercel.json` 配置文件，包含以下设置：
-- 构建命令：`npm run build`
-- 输出目录：`dist`
-- 框架：`vite`
-- COOP/COEP 头部配置（WebAssembly 和 SharedArrayBuffer 支持）
+推送更新的代码到GitHub，Vercel会自动重新部署。
 
-### 4. 部署
+### 步骤4: 验证部署
 
-配置完成后，Vercel 会自动部署：
-1. 推送代码到 GitHub
-2. Vercel 会自动检测更改并触发部署
-3. 部署完成后会提供一个 URL
+1. 打开浏览器开发者工具 → Network → WS标签
+2. 访问你的应用并启动语音识别  
+3. **关键检查**：确认WebSocket连接的是你的代理URL (xxx.onrender.com)，而不是dashscope.aliyuncs.com
+4. 检查连接成功并能正常进行语音识别
 
-### 5. 验证部署
+## 代理服务器端点
 
-访问部署的 URL，确认：
-- [ ] 页面正常加载
-- [ ] 摄像头和麦克风权限请求正常
-- [ ] 人脸检测功能工作
-- [ ] ASR 功能正常（需要 API 密钥）
-- [ ] 控制台无严重错误
+- **WebSocket**: `wss://你的域名.onrender.com/ali-asr`
+- **健康检查**: `https://你的域名.onrender.com/health`
 
-## 常见问题排查
+## 故障排查
 
-### API 密钥问题
-如果看到 "Alibaba Cloud API key is required" 错误：
-1. 确认在 Vercel 中设置了 `VITE_DASHSCOPE_API_KEY`
-2. 重新部署项目让环境变量生效
-3. 检查浏览器控制台是否有其他错误
+### 如果ASR仍然不工作：
 
-### SharedArrayBuffer 问题
-如果遇到 SharedArrayBuffer 相关错误：
-- 项目已配置了正确的 COOP/COEP 头部
-- 确保 `vercel.json` 文件存在且配置正确
+1. **检查Render日志**：
+   - 访问Render Dashboard → 你的服务 → Logs
+   - 查看连接和认证状态
 
-### 权限问题
-- HTTPS：Vercel 自动提供 HTTPS，摄像头/麦克风权限在 HTTPS 下正常工作
-- 域名白名单：如需特定域名配置，在 Vercel 项目设置中配置
+2. **验证环境变量**：
+   - Render中的 `DASHSCOPE_API_KEY` 设置正确
+   - Vercel中的 `VITE_ALI_ASR_PROXY_URL` 指向正确的Render URL
 
-## 手动部署命令
+3. **浏览器检查**：
+   - 控制台无WebSocket连接错误
+   - Network标签显示连接到代理而非阿里云直连
 
-如果需要使用 Vercel CLI：
+4. **测试代理健康**：
+   - 访问 `https://你的域名.onrender.com/health` 应该返回状态信息
 
-```bash
-# 安装 Vercel CLI
-npm i -g vercel
+## 部署后的架构流程
 
-# 在项目根目录登录
-vercel login
-
-# 部署
-vercel --prod
-
-# 设置环境变量（通过 CLI）
-vercel env add VITE_DASHSCOPE_API_KEY
+```
+用户语音 → 浏览器 → Vercel前端 → Render代理服务器 → 阿里云ASR → 代理 → 前端显示结果
 ```
 
-## 监控和日志
-
-- 访问 Vercel Dashboard > 你的项目 > Functions 标签查看日志
-- 实时日志：`vercel logs --follow`
-- 部署状态：在 Vercel Dashboard 中查看部署历史
+- ✅ API密钥安全存储在Render服务器端
+- ✅ 浏览器只连接到你的代理服务器
+- ✅ 代理服务器处理认证和转发
+- ✅ 完美解决CORS和认证问题
 
 ---
 
-**重要提示：** 请确保 API 密钥安全，不要在代码中硬编码，始终使用环境变量。
+**重要提示：** 现在API密钥只存储在Render代理服务器中，前端代码完全不接触敏感信息，更加安全。

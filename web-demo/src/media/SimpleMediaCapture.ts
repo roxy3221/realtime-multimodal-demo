@@ -186,13 +186,13 @@ export class SimpleMediaCapture {
   private setupASR(): void {
     console.log('🗣️ Setting up Gummy ASR...');
     
-    // 检查环境变量中的阿里云配置
-    const gummyApiKey = import.meta.env?.VITE_ALIBABA_API_KEY || import.meta.env?.VITE_DASHSCOPE_API_KEY;
+    // 检查代理服务器配置
+    const proxyUrl = import.meta.env.VITE_ALI_ASR_PROXY_URL;
     
-    if (gummyApiKey) {
-      console.log('🎯 Using Gummy WebSocket ASR');
+    if (proxyUrl) {
+      console.log('🎯 Using Gummy WebSocket ASR via proxy');
       this.asr = new GummyWebSocketASR(this.eventBus, {
-        apiKey: gummyApiKey,
+        apiKey: 'proxy-handled', // API密钥由代理服务器处理
         model: 'gummy-realtime-v1',
         sampleRate: 16000,
         format: 'pcm',
@@ -202,8 +202,8 @@ export class SimpleMediaCapture {
         maxEndSilence: 800
       });
     } else {
-      console.error('❌ No Alibaba Cloud API key provided. Please set VITE_ALIBABA_API_KEY or VITE_DASHSCOPE_API_KEY');
-      throw new Error('Alibaba Cloud API key is required for Gummy ASR');
+      console.error('❌ No proxy URL provided. Please set VITE_ALI_ASR_PROXY_URL');
+      throw new Error('Proxy URL is required for Gummy ASR');
     }
   }
 
