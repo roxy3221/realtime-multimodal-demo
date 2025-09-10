@@ -24,6 +24,7 @@ interface FaceDetectionResults {
   faceLandmarks?: unknown[];
 }
 import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
+import { RealtimeSTTWebSocketASR } from '../asr/RealtimeSTTWebSocketASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 
 export class SimpleMediaCapture {
@@ -44,7 +45,7 @@ export class SimpleMediaCapture {
   // 音频分析状态
   private lastProsodyEventTime = 0;
   
-  private asr: GummyWebSocketASR | null = null;
+  private asr: GummyWebSocketASR | RealtimeSTTWebSocketASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -181,14 +182,28 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 设置ASR - 只使用阿里云Gummy ASR
+   * 设置ASR - 支持多种ASR方案
    */
   private setupASR(): void {
-    console.log('🗣️ Setting up Gummy ASR...');
+    console.log('🗣️ Setting up ASR...');
     
-    // 检查代理服务器配置
+    // 优先使用 RealtimeSTT（本地服务器）
+    const realtimeSTTUrl = import.meta.env.VITE_REALTIME_STT_URL;
+    if (realtimeSTTUrl) {
+      console.log('🎯 Using RealtimeSTT WebSocket ASR');
+      this.asr = new RealtimeSTTWebSocketASR(this.eventBus, {
+        serverUrl: realtimeSTTUrl,
+        model: 'tiny.en',
+        language: 'zh',
+        sensitivity: 0.4,
+        minRecordingLength: 0.5,
+        postSpeechSilence: 0.7
+      });
+      return;
+    }
+    
+    // 备选：阿里云Gummy ASR
     const proxyUrl = import.meta.env.VITE_ALI_ASR_PROXY_URL;
-    
     if (proxyUrl) {
       console.log('🎯 Using Gummy WebSocket ASR via proxy');
       this.asr = new GummyWebSocketASR(this.eventBus, {
@@ -201,10 +216,22 @@ export class SimpleMediaCapture {
         translationEnabled: false,
         maxEndSilence: 800
       });
-    } else {
-      console.error('❌ No proxy URL provided. Please set VITE_ALI_ASR_PROXY_URL');
-      throw new Error('Proxy URL is required for Gummy ASR');
+      return;
     }
+    
+    // 没有配置任何ASR服务
+    console.warn('⚠️ No ASR service configured. Please set either:');
+    console.warn('  - VITE_REALTIME_STT_URL for RealtimeSTT');
+    console.warn('  - VITE_ALI_ASR_PROXY_URL for Gummy ASR');
+    
+    // 发送警告事件
+    this.eventBus.publish({
+      type: 'asr',
+      t: Date.now(),
+      textDelta: '[未配置ASR服务，请检查环境变量配置]',
+      isFinal: true,
+      currentWPM: 0
+    });
   }
 
   /**
