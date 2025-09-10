@@ -25,6 +25,7 @@ interface FaceDetectionResults {
 }
 import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
 import { RealtimeSTTWebSocketASR } from '../asr/RealtimeSTTWebSocketASR';
+import { WebSpeechASR } from '../asr/WebSpeechASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 
 export class SimpleMediaCapture {
@@ -219,19 +220,9 @@ export class SimpleMediaCapture {
       return;
     }
     
-    // 没有配置任何ASR服务
-    console.warn('⚠️ No ASR service configured. Please set either:');
-    console.warn('  - VITE_REALTIME_STT_URL for RealtimeSTT');
-    console.warn('  - VITE_ALI_ASR_PROXY_URL for Gummy ASR');
-    
-    // 发送警告事件
-    this.eventBus.publish({
-      type: 'asr',
-      t: Date.now(),
-      textDelta: '[未配置ASR服务，请检查环境变量配置]',
-      isFinal: true,
-      currentWPM: 0
-    });
+    // 回退到 Web Speech API（浏览器原生）
+    console.log('🎯 Using Web Speech API as fallback');
+    this.asr = new WebSpeechASR(this.eventBus);
   }
 
   /**

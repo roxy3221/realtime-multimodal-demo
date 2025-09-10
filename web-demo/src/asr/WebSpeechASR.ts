@@ -44,7 +44,7 @@ export class WebSpeechASR {
     this.recognition = new SpeechRecognition();
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
-    this.recognition.lang = 'zh-CN'; // 默认中文，可配置
+    this.recognition.lang = 'zh-CN,en-US'; // 中英混合识别
     this.recognition.maxAlternatives = 1;
 
     // 处理识别开始
