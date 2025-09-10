@@ -59,6 +59,7 @@ interface GummyResponse {
     transcription_result?: TranscriptionResult;
     translation_result?: TranslationResult;
     usage?: any;
+    message?: string; // 添加错误消息字段
   };
 }
 
@@ -173,9 +174,43 @@ export class GummyWebSocketASR {
       console.log('🔗 Connecting to Ali ASR proxy:', proxyUrl);
       this.websocket = new WebSocket(proxyUrl);
       
+      // 设置连接超时
+      const connectionTimeout = setTimeout(() => {
+        if (this.websocket && this.websocket.readyState === WebSocket.CONNECTING) {
+          this.websocket.close();
+          reject(new Error('WebSocket connection timeout'));
+        }
+      }, 10000);
+      
       this.websocket.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log('✅ WebSocket connected to Ali ASR proxy');
-        resolve();
+        
+        // 等待proxy-connected消息再resolve
+        const proxyConnectedHandler = (event: MessageEvent) => {
+          try {
+            const response = JSON.parse(event.data);
+            if (response.header?.event === 'proxy-connected') {
+              console.log('🔗 Proxy ready for tasks');
+              this.websocket!.removeEventListener('message', proxyConnectedHandler);
+              resolve();
+            }
+          } catch (error) {
+            // 忽略JSON解析错误，继续等待
+          }
+        };
+        
+        if (this.websocket) {
+          this.websocket.addEventListener('message', proxyConnectedHandler);
+        }
+        
+        // 如果10秒内没有收到proxy-connected，也认为连接成功
+        setTimeout(() => {
+          if (this.websocket) {
+            this.websocket.removeEventListener('message', proxyConnectedHandler);
+            resolve();
+          }
+        }, 10000);
       };
       
       this.websocket.onmessage = (event) => {
@@ -183,11 +218,13 @@ export class GummyWebSocketASR {
       };
       
       this.websocket.onerror = (error) => {
+        clearTimeout(connectionTimeout);
         console.error('❌ WebSocket error:', error);
         reject(new Error('WebSocket connection failed - check proxy server'));
       };
       
       this.websocket.onclose = (event) => {
+        clearTimeout(connectionTimeout);
         console.log('🔌 WebSocket connection closed:', event.code, event.reason);
         if (this.isActive) {
           // 连接意外关闭，尝试重连
@@ -210,6 +247,11 @@ export class GummyWebSocketASR {
       const { header, payload } = response;
       
       switch (header.event) {
+        case 'proxy-connected':
+          console.log('🔗 Proxy connected:', payload?.message || 'Connected to Ali ASR proxy');
+          // 代理连接成功，可以开始发送任务
+          break;
+          
         case 'task-started':
           console.log('🎤 Task started, task_id:', header.task_id);
           break;
@@ -442,11 +484,38 @@ export class GummyWebSocketASR {
         }
       };
 
+      console.log('📤 Sending run-task command:', JSON.stringify(message, null, 2));
       this.websocket.send(JSON.stringify(message));
       
-      // 等待task-started事件
-      setTimeout(() => resolve(), 1000);
-      setTimeout(() => reject(new Error('Run task timeout')), 10000);
+      // 监听task-started事件
+      let taskStartedReceived = false;
+      const taskStartedHandler = (event: MessageEvent) => {
+        try {
+          const response = JSON.parse(event.data);
+          if (response.header?.event === 'task-started' && response.header?.task_id === this.taskId) {
+            console.log('✅ Task started successfully');
+            taskStartedReceived = true;
+            this.websocket!.removeEventListener('message', taskStartedHandler);
+            resolve();
+          } else if (response.header?.event === 'task-failed') {
+            console.error('❌ Task start failed:', response.payload);
+            this.websocket!.removeEventListener('message', taskStartedHandler);
+            reject(new Error(`Task failed: ${response.payload?.message || 'Unknown error'}`));
+          }
+        } catch (error) {
+          // 忽略JSON解析错误，继续等待
+        }
+      };
+      
+      this.websocket.addEventListener('message', taskStartedHandler);
+      
+      // 10秒超时
+      setTimeout(() => {
+        if (!taskStartedReceived) {
+          this.websocket!.removeEventListener('message', taskStartedHandler);
+          reject(new Error('Task start timeout - no response from server'));
+        }
+      }, 10000);
     });
   }
 
