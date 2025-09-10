@@ -151,6 +151,10 @@ export class WebSpeechASR {
    * 处理识别结果
    */
   private handleRecognitionResult(event: SpeechRecognitionEvent): void {
+    // ✅ 添加调试输出
+    console.count('🎤 onresult');
+    console.log('🎤 onresult payload:', event);
+    
     let finalTranscript = '';
     let interimTranscript = '';
 
@@ -179,15 +183,20 @@ export class WebSpeechASR {
     const textDelta = newTranscript.slice(this.lastTranscriptLength);
     
     if (textDelta.trim().length > 0) {
-      // 发送ASR事件
-      this.eventBus.publish({
+      const asrEvent: ASREvent = {
         type: 'asr',
         t: Date.now(),
         textDelta: textDelta.trim(),
         isFinal: event.results[event.resultIndex]?.isFinal || false,
         currentWPM: this.getCurrentWPM(),
-        fullTranscript: this.currentTranscript
-      } as ASREvent);
+        fullTranscript: newTranscript
+      };
+      
+      // ✅ 发送前进行调试输出
+      console.log('🎤 发送ASR事件:', asrEvent);
+      
+      // 发送ASR事件
+      this.eventBus.publish(asrEvent);
       
       this.currentTranscript = newTranscript;
       this.lastTranscriptLength = newTranscript.length;
