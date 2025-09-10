@@ -165,10 +165,22 @@ export class GummyWebSocketASR {
   private connectWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       // 使用代理服务器URL而不是直连阿里云
-      const proxyUrl = import.meta.env.VITE_ALI_ASR_PROXY_URL;
+      let proxyUrl = import.meta.env.VITE_ALI_ASR_PROXY_URL;
       if (!proxyUrl) {
         reject(new Error('VITE_ALI_ASR_PROXY_URL environment variable not configured'));
         return;
+      }
+      
+      // 自动选择协议：HTTPS页面使用wss，HTTP页面使用ws
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      
+      // 如果环境变量中的URL协议与当前页面协议不匹配，自动修正
+      if (proxyUrl.startsWith('ws://') && scheme === 'wss') {
+        proxyUrl = proxyUrl.replace('ws://', 'wss://');
+        console.log('🔒 Auto-upgraded to wss:// for HTTPS page');
+      } else if (proxyUrl.startsWith('wss://') && scheme === 'ws') {
+        proxyUrl = proxyUrl.replace('wss://', 'ws://');
+        console.log('🔓 Auto-downgraded to ws:// for HTTP page');
       }
       
       console.log('🔗 Connecting to Ali ASR proxy:', proxyUrl);
