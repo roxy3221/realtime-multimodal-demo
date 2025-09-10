@@ -1,7 +1,7 @@
-"""
-RealtimeSTT WebSocket ASR 实现
-用于替换 Gummy ASR，基于本地 RealtimeSTT 服务器
-"""
+/**
+ * RealtimeSTT WebSocket ASR 实现
+ * 用于替换 Gummy ASR，基于本地 RealtimeSTT 服务器
+ */
 
 import type { ASREvent } from '../types';
 import type { EventBus } from '../events/EventBus';
