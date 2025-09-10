@@ -64,6 +64,8 @@ function App() {
       
       // 订阅所有事件用于调试和UI更新
       const unsubscribe = globalEventBus.subscribe('all', (event) => {
+        // 强制日志所有事件以便调试
+        console.log(`🔥 [UI] Event received:`, event.type, event);
         // setEvents(prev => [...prev.slice(-9), event]); // 保留最近10个事件
         
         // 根据事件类型更新UI数据
@@ -116,29 +118,38 @@ function App() {
         if (event.type === 'asr') {
           console.log('🗣️ ASR event:', event);
           
-          // 检查是否是状态消息
-          if (event.textDelta.startsWith('[') && event.textDelta.endsWith(']')) {
+          // 检查是否是状态消息（包含方括号的消息）
+          if (event.textDelta && event.textDelta.includes('[') && event.textDelta.includes(']')) {
             // 这是状态消息
             if (event.textDelta.includes('已启动')) {
               setAsrStatus('active');
               setAsrError('');
+              console.log('✅ ASR状态: 已启动');
             } else if (event.textDelta.includes('不可用') || event.textDelta.includes('失败') || 
                        event.textDelta.includes('被拒绝') || event.textDelta.includes('错误')) {
               setAsrStatus('error');
               setAsrError(event.textDelta.replace(/[\[\]]/g, ''));
+              console.log('❌ ASR状态: 错误', event.textDelta);
             } else {
               setAsrStatus('starting');
+              console.log('⏳ ASR状态: 启动中', event.textDelta);
             }
             // 不添加状态消息到转录文本
-          } else {
-            // 这是正常的转录文本
-            setTranscriptText(prev => prev + event.textDelta + ' ');
+          } else if (event.textDelta && event.textDelta.trim() !== '') {
+            // 这是正常的转录文本 - 只添加非空内容
+            console.log('📝 添加转录文本:', event.textDelta);
+            setTranscriptText(prev => {
+              const newText = prev + event.textDelta + ' ';
+              console.log('📝 转录文本更新为:', newText);
+              return newText;
+            });
             setAsrStatus('active');
             setAsrError('');
           }
           
           // 更新语速
           if (event.currentWPM !== undefined) {
+            console.log('🏃 语速更新:', event.currentWPM);
             setCurrentWPM(event.currentWPM);
             setSpeechMetrics(prev => ({
               ...prev,

@@ -27,19 +27,19 @@ export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
 // 触发配置（来自Claude.md，调整为更保守的阈值）
 export const DEFAULT_TRIGGER_CONFIG: TriggerConfig = {
   face: {
-    T_high: 0.3,       // 降低进入阈值，但对于余弦距离这个值更合理 
-    T_low: 0.2,        // 降低退出阈值
-    cooldown_ms: 2000, // 增加冷却时间到2秒，避免频繁触发
-    min_frames: 3,     // 最小连续帧数
+    T_high: 0.15,      // 进一步降低阈值，更容易触发 
+    T_low: 0.1,        // 进一步降低退出阈值
+    cooldown_ms: 1000, // 减少冷却时间到1秒
+    min_frames: 2,     // 减少最小连续帧数
   },
   prosody: {
-    T_high: 0.6,
-    T_low: 0.4,
-    cooldown_ms: 1200,
-    min_samples: 5,    // 最小连续采样数
+    T_high: 0.4,       // 降低阈值更容易触发
+    T_low: 0.2,
+    cooldown_ms: 800,
+    min_samples: 3,    // 减少最小连续采样数
   },
   global: {
-    max_event_rate: 1.0, // 降低到最大1事件/秒
+    max_event_rate: 2.0, // 提高到最大2事件/秒
   },
 };
 
@@ -90,7 +90,7 @@ export const PERFORMANCE_TARGETS = {
 // 开发/调试配置
 export const DEBUG_CONFIG = {
   enable_logging: true,
-  log_level: 'info' as 'debug' | 'info' | 'warn' | 'error',
+  log_level: 'debug' as 'debug' | 'info' | 'warn' | 'error',
   enable_performance_monitoring: true,
   show_debug_overlay: false,
   export_events_json: true,
