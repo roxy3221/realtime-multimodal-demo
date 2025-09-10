@@ -23,8 +23,6 @@ interface FaceDetectionResults {
   faceBlendshapes: Blendshapes[];
   faceLandmarks?: unknown[];
 }
-import { GummyWebSocketASR } from '../asr/GummyWebSocketASR';
-import { RealtimeSTTWebSocketASR } from '../asr/RealtimeSTTWebSocketASR';
 import { WebSpeechASR } from '../asr/WebSpeechASR';
 import { calculateCosineSimilarity, normalizeVector } from '../utils/math';
 
@@ -46,7 +44,7 @@ export class SimpleMediaCapture {
   // 音频分析状态
   private lastProsodyEventTime = 0;
   
-  private asr: GummyWebSocketASR | RealtimeSTTWebSocketASR | null = null;
+  private asr: WebSpeechASR | null = null;
   private eventBus: EventBus;
   private isCapturing = false;
   private animationFrame: number | null = null;
@@ -183,45 +181,10 @@ export class SimpleMediaCapture {
   }
 
   /**
-   * 设置ASR - 支持多种ASR方案
+   * 设置ASR - 使用Web Speech API
    */
   private setupASR(): void {
-    console.log('🗣️ Setting up ASR...');
-    
-    // 优先使用 RealtimeSTT（本地服务器）
-    const realtimeSTTUrl = import.meta.env.VITE_REALTIME_STT_URL;
-    if (realtimeSTTUrl) {
-      console.log('🎯 Using RealtimeSTT WebSocket ASR');
-      this.asr = new RealtimeSTTWebSocketASR(this.eventBus, {
-        serverUrl: realtimeSTTUrl,
-        model: 'tiny.en',
-        language: 'zh',
-        sensitivity: 0.4,
-        minRecordingLength: 0.5,
-        postSpeechSilence: 0.7
-      });
-      return;
-    }
-    
-    // 备选：阿里云Gummy ASR
-    const proxyUrl = import.meta.env.VITE_ALI_ASR_PROXY_URL;
-    if (proxyUrl) {
-      console.log('🎯 Using Gummy WebSocket ASR via proxy');
-      this.asr = new GummyWebSocketASR(this.eventBus, {
-        apiKey: 'proxy-handled', // API密钥由代理服务器处理
-        model: 'gummy-realtime-v1',
-        sampleRate: 16000,
-        format: 'pcm',
-        sourceLanguage: 'auto',
-        transcriptionEnabled: true,
-        translationEnabled: false,
-        maxEndSilence: 800
-      });
-      return;
-    }
-    
-    // 回退到 Web Speech API（浏览器原生）
-    console.log('🎯 Using Web Speech API as fallback');
+    console.log('🗣️ Setting up Web Speech API...');
     this.asr = new WebSpeechASR(this.eventBus);
   }
 
