@@ -11,7 +11,6 @@ export class WebSpeechASR {
   private eventBus: EventBus;
   private isActive = false;
   private currentTranscript = '';
-  private lastTranscriptLength = 0;
   
   // 语速计算相关
   private wordHistory: Array<{word: string, time: number}> = [];
@@ -288,7 +287,6 @@ export class WebSpeechASR {
       this.recognition.start();
       this.isActive = true;
       this.currentTranscript = '';
-      this.lastTranscriptLength = 0;
       this.wordHistory = [];
       
       // 发送启动状态
