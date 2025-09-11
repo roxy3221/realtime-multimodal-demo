@@ -95,7 +95,17 @@ function App() {
           // WebRTC优化的prosody事件处理
           const prosodyEvent = event as ProsodyEvent;
           
-          setSpeechMetrics({
+          console.log('🎤 Prosody event data:', {
+            f0: prosodyEvent.f0,
+            rms: prosodyEvent.rms,
+            wpm: prosodyEvent.wpm,
+            vadActive: prosodyEvent.vadActive,
+            f0Stability: prosodyEvent.f0Stability,
+            zeroCrossingRate: prosodyEvent.zeroCrossingRate,
+            spectralCentroid: prosodyEvent.spectralCentroid
+          });
+          
+          const newMetrics = {
             frequency: {
               value: Math.round(prosodyEvent.f0 || 0), // 格式化为整数Hz
               change: prosodyEvent.f0Stability ? Math.round((1 - prosodyEvent.f0Stability) * 100) : 0
@@ -112,7 +122,10 @@ function App() {
               state: (prosodyEvent.f0Stability && prosodyEvent.f0Stability > 0.5) ? '正常' : '不稳定',
               spectralCentroid: Math.round(prosodyEvent.spectralCentroid || 0)
             }
-          });
+          };
+          
+          console.log('🎤 Setting new speech metrics:', newMetrics);
+          setSpeechMetrics(newMetrics);
         }
 
         if (event.type === 'asr') {
