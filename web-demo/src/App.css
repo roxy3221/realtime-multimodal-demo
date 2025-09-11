@@ -198,6 +198,88 @@ body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
+/* 麦克风状态指示器 */
+.microphone-indicator {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.microphone-icon {
+  font-size: 2em;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #ecf0f1;
+  transition: all 0.3s ease;
+  border: 3px solid #bdc3c7;
+}
+
+.microphone-icon.active {
+  background: #e8f5e8;
+  border-color: #27ae60;
+  color: #27ae60;
+}
+
+.microphone-icon.listening {
+  background: #e3f2fd;
+  border-color: #2196f3;
+  color: #2196f3;
+  animation: pulse-mic 1s ease-in-out infinite;
+}
+
+.microphone-icon.error {
+  background: #ffebee;
+  border-color: #e74c3c;
+  color: #e74c3c;
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes pulse-mic {
+  0% { 
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
+  }
+  50% { 
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(33, 150, 243, 0);
+  }
+  100% { 
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(33, 150, 243, 0);
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.microphone-status {
+  flex: 1;
+}
+
+.microphone-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 5px;
+}
+
+.microphone-connection {
+  font-size: 13px;
+  color: #7f8c8d;
+  font-weight: 500;
+}
+
 /* 语音输入状态 */
 .speech-input-status {
   background: #34495e;

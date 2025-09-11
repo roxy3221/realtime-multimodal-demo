@@ -151,55 +151,52 @@ export class WebSpeechASR {
    * 处理识别结果
    */
   private handleRecognitionResult(event: SpeechRecognitionEvent): void {
-    // ✅ 添加调试输出
+    // 添加调试输出
     console.count('🎤 onresult');
     console.log('🎤 onresult payload:', event);
     
-    let finalTranscript = '';
-    let interimTranscript = '';
+    // 使用推荐的稳妥写法：重新构建完整transcript
+    let finalText = '';
+    let interimText = '';
 
-    // 处理结果，增加安全检查
-    for (let i = event.resultIndex; i < event.results.length; i++) {
+    // 遍历所有results重新构建完整文本
+    for (let i = 0; i < event.results.length; i++) {
       const result = event.results[i];
-      const transcript = result?.transcript;
+      const transcript = result?.[0]?.transcript || '';
       
-      // ✅ 增强空值检查
-      if (transcript && typeof transcript === 'string' && transcript.trim().length > 0) {
+      if (transcript.trim()) {
         if (result.isFinal) {
-          finalTranscript += transcript + ' ';
-          this.processNewWords(transcript);
+          finalText += transcript + ' ';
         } else {
-          interimTranscript += transcript;
+          interimText += transcript;
         }
       }
     }
 
-    // 计算增量文本，增加安全检查
-    const newTranscript = (finalTranscript || interimTranscript).trim();
-    if (!newTranscript || newTranscript.length <= this.lastTranscriptLength) {
-      return; // ✅ 跳过空白或重复内容
-    }
+    // 生成完整文本
+    const fullText = (finalText + interimText).trim();
     
-    const textDelta = newTranscript.slice(this.lastTranscriptLength);
-    
-    if (textDelta.trim().length > 0) {
+    // 只要有非空文本就发送更新
+    if (fullText) {
       const asrEvent: ASREvent = {
         type: 'asr',
         t: Date.now(),
-        textDelta: textDelta.trim(),
-        isFinal: event.results[event.resultIndex]?.isFinal || false,
+        textDelta: fullText, // 发送完整文本而不是增量
+        isFinal: finalText.length > 0, // 是否包含final结果
         currentWPM: this.getCurrentWPM(),
-        fullTranscript: newTranscript
+        fullTranscript: fullText
       };
       
-      // ✅ 发送前进行调试输出
+      // 发送前进行调试输出
       console.log('🎤 发送ASR事件:', asrEvent);
       
       // 发送ASR事件
       this.eventBus.publish(asrEvent);
       
-      this.currentTranscript = newTranscript;
-      this.lastTranscriptLength = newTranscript.length;
+      // 只在有final文本时处理单词
+      if (finalText) {
+        this.processNewWords(finalText);
+      }
     }
   }
 

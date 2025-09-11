@@ -149,13 +149,9 @@ function App() {
             }
             // 不添加状态消息到转录文本
           } else if (event.textDelta && event.textDelta.trim() !== '') {
-            // 这是正常的转录文本 - 只添加非空内容
-            console.log('📝 添加转录文本:', event.textDelta);
-            setTranscriptText(prev => {
-              const newText = prev + event.textDelta + ' ';
-              console.log('📝 转录文本更新为:', newText);
-              return newText;
-            });
+            // 这是正常的转录文本 - 直接使用完整文本（不是增量累加）
+            console.log('📝 设置转录文本:', event.textDelta);
+            setTranscriptText(event.textDelta); // 直接设置，不累加
             setAsrStatus('active');
             setAsrError('');
           }
@@ -407,6 +403,19 @@ function App() {
           {/* 右侧面板：语音识别与韵律分析 */}
           <div className="speech-analysis-panel">
             <div className="panel-title">语音识别与韵律分析</div>
+            
+            {/* 麦克风状态指示器 */}
+            <div className="microphone-indicator">
+              <div className={`microphone-icon ${asrStatus === 'active' ? 'active' : ''} ${speechMetrics.energy.activity === '说话中' ? 'listening' : ''} ${asrStatus === 'error' ? 'error' : ''}`}>
+                🎤
+              </div>
+              <div className="microphone-status">
+                <div className="microphone-title">麦克风状态</div>
+                <div className="microphone-connection">
+                  {mediaStatus.hasAudio ? '已连接' : '未连接'}
+                </div>
+              </div>
+            </div>
             
             <div className={`speech-input-status ${speechMetrics.energy.activity === '说话中' ? 'listening' : ''} ${asrStatus === 'error' ? 'error' : ''}`}>
               {asrStatus === 'idle' && '语音识别未启动'}
