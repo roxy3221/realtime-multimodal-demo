@@ -382,20 +382,25 @@ function App() {
             
             <div className="face-metrics">
               <div className="metric-item">
-                <div className="metric-value">{faceMetrics.headPose.yaw}°, {faceMetrics.headPose.pitch}°</div>
-                <div className="metric-label">偏航角, 俯仰角</div>
+                <div className="metric-value">
+                  {faceMetrics.headPose.yaw === 0 && faceMetrics.headPose.pitch === 0 
+                    ? '正前方' 
+                    : `${faceMetrics.headPose.yaw > 0 ? '右' : faceMetrics.headPose.yaw < 0 ? '左' : '正'}${Math.abs(faceMetrics.headPose.yaw)}°, ${faceMetrics.headPose.pitch > 0 ? '上' : faceMetrics.headPose.pitch < 0 ? '下' : '平'}${Math.abs(faceMetrics.headPose.pitch)}°`
+                  }
+                </div>
+                <div className="metric-label">看向方向</div>
               </div>
               <div className="metric-item">
                 <div className="metric-value">{faceMetrics.expression.type}</div>
-                <div className="metric-label">置信度: {faceMetrics.expression.confidence}%</div>
+                <div className="metric-label">人脸清晰度: {faceMetrics.expression.confidence}%</div>
               </div>
               <div className="metric-item">
-                <div className="metric-value">{faceMetrics.eyeState.state}</div>
-                <div className="metric-label">EAR: {faceMetrics.eyeState.ear.toFixed(2)}</div>
+                <div className="metric-value">{faceMetrics.eyeState.state === '正常' ? '正常张开' : faceMetrics.eyeState.state}</div>
+                <div className="metric-label">眼睛状态</div>
               </div>
               <div className="metric-item">
-                <div className="metric-value">{faceMetrics.faceStability.state}</div>
-                <div className="metric-label">得分: {faceMetrics.faceStability.score}%</div>
+                <div className="metric-value">{faceMetrics.faceStability.state === '稳定' ? '平稳' : '频繁'}</div>
+                <div className="metric-label">头部活动</div>
               </div>
             </div>
           </div>
@@ -426,20 +431,20 @@ function App() {
             
             <div className="speech-metrics">
               <div className="metric-item">
-                <div className="metric-value">{speechMetrics.frequency.value}</div>
-                <div className="metric-label">变化: ±{speechMetrics.frequency.change}</div>
+                <div className="metric-value">{speechMetrics.frequency.value} Hz</div>
+                <div className="metric-label">音调频率 (波动: ±{speechMetrics.frequency.change})</div>
               </div>
               <div className="metric-item">
                 <div className="metric-value">{speechMetrics.energy.value.toFixed(2)}</div>
-                <div className="metric-label">活动: {speechMetrics.energy.activity}</div>
+                <div className="metric-label">声音强度 ({speechMetrics.energy.activity})</div>
               </div>
               <div className="metric-item">
-                <div className="metric-value">{speechMetrics.wpm.value}</div>
-                <div className="metric-label">过零率: {speechMetrics.wpm.zeroCrossing.toFixed(1)}</div>
+                <div className="metric-value">{speechMetrics.wpm.value} 字/分钟</div>
+                <div className="metric-label">说话语速 (清晰度: {speechMetrics.wpm.zeroCrossing.toFixed(1)})</div>
               </div>
               <div className="metric-item">
-                <div className="metric-value">{speechMetrics.quality.state}</div>
-                <div className="metric-label">频谱重心: {speechMetrics.quality.spectralCentroid} Hz</div>
+                <div className="metric-value">{speechMetrics.quality.state === '正常' ? '清晰' : '模糊'}</div>
+                <div className="metric-label">发音质量</div>
               </div>
             </div>
             
@@ -460,7 +465,7 @@ function App() {
                 )}
               </div>
               <div className="transcript-stats">
-                当前语速: {currentWPM} WPM
+                当前语速: {currentWPM} 字/分钟
                 {asrStatus === 'active' && (
                   <span style={{ color: '#27ae60', marginLeft: '10px' }}>● 活跃</span>
                 )}
